@@ -1,6 +1,7 @@
 # A bot with some basic custom skills.
 from collections import namedtuple
 from dotenv import load_dotenv
+from random import randint
 import discord
 import os
 
@@ -36,11 +37,20 @@ async def command_echo(client, msg, intext):
     else:
         await reply(msg, f"`{intext}`")
 
+async def command_shruggie(client, msg, intext):    
+    await reply(msg, discord.utils.escape_markdown("¯\\_(ツ)_/¯"))
+
+async def command_roll20(client, msg, intext):
+    diceroll = randint(1, 20)
+    await reply(msg, f"`d20 => {diceroll}`")
+
 Command = namedtuple("Command", ["keys", "func", "info"])
 # Add commands here. Commands need at least one key and a function to perform.
 COMMAND_CONFIG = [
     Command([DEFAULT_HELP_KEY], command_help, "List available commands."),
     Command(["echo", "repeat"], command_echo, "Repeat your message back."),
+    Command(["shrug"], command_shruggie, "Shruggie."),
+    Command(["roll20"], command_roll20, "Roll a d20."),
 ]
 
 class MidClient(discord.Client):
