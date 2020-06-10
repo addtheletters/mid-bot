@@ -1,0 +1,10 @@
+# python venv
+bin/
+include/
+lib/
+lib64/
+share/
+pyvenv.cfg
+
+# env var secrets
+src/.env
