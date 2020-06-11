@@ -1,7 +1,7 @@
 # A bot with some basic custom skills.
-from collections import namedtuple
+from commands import *
 from dotenv import load_dotenv
-from random import randint
+from utils import reply, print_message
 import discord
 import os
 
@@ -11,40 +11,6 @@ TOKEN = os.getenv("DISCORD_TOKEN")
 BOT_SUMMON_PREFIX = "~"
 DEFAULT_HELP_KEY = "help"
 
-def print_message(msg):
-    print(f"({msg.id}) {msg.created_at.isoformat(timespec='milliseconds')} [{msg.channel}] <{msg.author}> {msg.content}")
-
-# Send `text` in response to `msg`.
-async def reply(msg, text):
-    await msg.channel.send(f"{msg.author.mention} {text}")
-
-async def command_help(client, msg, intext):
-    shown = set()
-    help_info = "```Available commands:\n"
-    for key in client.commands.keys():
-        if key in shown:
-            continue
-        cmd = client.commands[key]
-        help_info += f"{cmd.keys}: {cmd.info}\n"
-        for altkey in cmd.keys:
-            shown.add(altkey)
-    help_info += "```"
-    await reply(msg, help_info)
-
-async def command_echo(client, msg, intext):
-    if len(intext) == 0:
-        await reply(msg, f"There is only silence.")
-    else:
-        await reply(msg, f"`{intext}`")
-
-async def command_shruggie(client, msg, intext):    
-    await reply(msg, discord.utils.escape_markdown("¯\\_(ツ)_/¯"))
-
-async def command_roll20(client, msg, intext):
-    diceroll = randint(1, 20)
-    await reply(msg, f"`d20 => {diceroll}`")
-
-Command = namedtuple("Command", ["keys", "func", "info"])
 # Add commands here. Commands need at least one key and a function to perform.
 COMMAND_CONFIG = [
     Command([DEFAULT_HELP_KEY], command_help, "List available commands."),
@@ -107,5 +73,6 @@ class MidClient(discord.Client):
             else:
                 await reply(msg, f"Unrecognized command `{command}`. See `{BOT_SUMMON_PREFIX}{DEFAULT_HELP_KEY}`.")
 
-client = MidClient()
-client.run(TOKEN)
+if __name__ == "__main__":
+    client = MidClient()
+    client.run(TOKEN)
