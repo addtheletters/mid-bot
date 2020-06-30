@@ -16,7 +16,7 @@ COMMAND_CONFIG = [
     Command([DEFAULT_HELP_KEY], command_help, "List available commands."),
     Command(["echo", "repeat"], command_echo, "Repeat your message back."),
     Command(["shrug"], command_shruggie, "Shruggie."),
-    Command(["roll20"], command_roll20, "Roll a d20."),
+    Command(["roll"], command_roll, "Roll some dice."),
 ]
 
 class MidClient(discord.Client):

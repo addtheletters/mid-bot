@@ -29,13 +29,10 @@ async def command_echo(client, msg, intext):
 async def command_shruggie(client, msg, intext):    
     await reply(msg, discord.utils.escape_markdown("¯\\_(ツ)_/¯"))
 
-async def command_roll20(client, msg, intext):
-    diceroll = randint(1, 20)
-    await reply(msg, f"`d20 => {diceroll}`")
-
 async def command_roll(client, msg, intext):
     try:
         roll_result = dice.roll(intext)
-        await reply(msg, dice.format_roll_result(roll_result))
-    except Error as err:
-        await reply(msg, f"Sorry; encountered error during roll of `{intext}`.\n```{err}```")
+        await reply(msg, dice.format_roll_results(roll_result))
+    except Exception as err:
+        print(f"Roll error: {err}")
+        await reply(msg, f"Ye input `{intext}` hath caused an error.\n```{err}```")
