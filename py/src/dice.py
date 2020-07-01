@@ -3,6 +3,7 @@
 
 import collections, re
 from random import randint
+from utils import escape
 
 ProtoToken = collections.namedtuple("ProtoToken", ["type", "value"])
 
@@ -200,7 +201,7 @@ class Evaluator:
             if self._kind == "(": # parenthesis group
                 return "(" + self.first.describe() + ")"
             if self.first != None and self.second != None: # infix
-                return f"{self.first.describe(breakout)}{self._kind}{self.second.describe(breakout)}"
+                return f"{self.first.describe(breakout)}{escape(self._kind)}{self.second.describe(breakout)}"
             if self.first != None: # prefix
                 return f"{self._kind}{self.first.describe(breakout)}"
             else:
@@ -286,7 +287,7 @@ def roll(intext):
 def format_roll_results(results):
     out = ""
     for row in results:
-        out += f"`{row.describe(False)}` => {row.value}  |  {row.describe(True)}"
+        out += f"{row.describe(False)} => {row.value}  |  {row.describe(True)}"
         out += "\n"
     return out
 
