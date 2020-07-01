@@ -69,7 +69,7 @@ __**shrug**__
 Displays a shruggie: ¯\\\\_(ツ)\\_/¯
 That's all.
 """),
-    Command(["roll"], command_roll, "Roll some dice.",
+    Command(["roll", "r"], command_roll, "Roll some dice.",
 f"""
 __**roll**__
 Rolls some dice and does some math.

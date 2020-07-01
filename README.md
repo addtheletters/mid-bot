@@ -1,6 +1,6 @@
 # mid-bot
 
-A barebones discord bot.
+A barebones discord bot. Can roll dice and shrug profusely.
 
 Using:
 - [python3](https://www.python.org/)
