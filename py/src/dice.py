@@ -1,10 +1,6 @@
 # Dicerolling.
 # Parser and evaluator for dice roll inputs.
 
-# TODOs:
-# parens for grouping
-# clean up tokenizer
-
 import collections, re
 from random import randint
 
@@ -12,7 +8,7 @@ ProtoToken = collections.namedtuple("ProtoToken", ["type", "value"])
 
 TOKEN_SPEC = [
     ("NUMBER",   r"\d+(\.\d*)?"),  # Integer or decimal number
-    ("OP",       r"[dk][hl]|[+\-*/^d]"),  # Operators
+    ("OP",       r"[dk][hl]|[+\-*/^d()]"),  # Operators
     ("END",      r"[;\n]"),        # Line end / break characters
     ("SKIP",     r"[ \t]+"),       # Skip over spaces and tabs
     ("MISMATCH", r"."),            # Any other character
@@ -159,6 +155,11 @@ class Evaluator:
     def _current(self):
         return self.token_current
 
+    def advance(self, expected=None):
+        if expected and self._current()._kind != expected:
+            raise SyntaxError(f"Missing expected: {expected}")
+        return self._next()
+
     # Syntax tree base class
     class _Symbol:
         # token type
@@ -177,12 +178,12 @@ class Evaluator:
 
         # Null denotation: value for literals, prefix behavior for operators.
         def as_prefix(self, evaluator):
-            raise SyntaxError(f"Can't evaluate as prefix: {self}")
+            raise SyntaxError(f"Unexpected symbol: {self}")
 
         # Left denotation: infix behavior for operators. Preceding expression
         # provided as `left`.
         def as_infix(self, evaluator, left):
-            raise SyntaxError(f"Can't evaluate as infix: {self}")
+            raise SyntaxError(f"Unexpected symbol: {self}")
 
         # Recursively describe the expression, showing detailed dice roll information
         def describe(self, breakout=False):
@@ -193,9 +194,11 @@ class Evaluator:
                         dice_breakout = ""
                     dice_count = "" if self.second == None else self.first.describe(breakout)
                     dice_size = self.first.describe(breakout) if self.second == None else self.second.describe(breakout)
-                    return f"[{dice_count}d{dice_size}{dice_breakout}={self.value}]"
+                    return f"[{dice_count}d{dice_size} {dice_breakout}={self.value}]"
                 else:
-                    return f"[{self.first.describe()}{self._kind}{self.second.describe(breakout)}{dice_breakout}={self.value}]"
+                    return f"[{self.first.describe()}{self._kind}{self.second.describe(breakout)} {dice_breakout}={self.value}]"
+            if self._kind == "(": # parenthesis group
+                return "(" + self.first.describe() + ")"
             if self.first != None and self.second != None: # infix
                 return f"{self.first.describe(breakout)}{self._kind}{self.second.describe(breakout)}"
             if self.first != None: # prefix
@@ -208,7 +211,7 @@ class Evaluator:
                 return f"{self.value}"
             out = [self._kind, self.first, self.second]
             out = map(str, filter(None, out))
-            return "(" + " ".join(out) + ")"
+            return "<" + " ".join(out) + ">"
 
     # Parse and evaluate an expression from symbols. Recursive.
     def expr(self, right_bp=0):
@@ -283,7 +286,7 @@ def roll(intext):
 def format_roll_results(results):
     out = ""
     for row in results:
-        out += f"`{row.describe(False)}` => {row.value}  :  {row.describe(True)}"
+        out += f"`{row.describe(False)}` => {row.value}  |  {row.describe(True)}"
         out += "\n"
     return out
 
@@ -330,12 +333,19 @@ def _pow_operator(node, x, y):
     node.value = x.value ** y.value
 
 def _number_nud(self, ev):
-    self.raw = f"{self.value}"
+    return self
+
+def _left_paren_nud(self, ev):
+    self.first = ev.expr()
+    self.value = self.first.value
+    ev.advance(expected=")")
     return self
 
 # initialize symbol table with type classes
 Evaluator.register_symbol("NUMBER").as_prefix = _number_nud
 Evaluator.register_symbol("END")
+Evaluator.register_symbol("(").as_prefix = _left_paren_nud
+Evaluator.register_symbol(")")
 Evaluator.register_infix("+", _add_operator, 10)
 Evaluator.register_infix("-", _subtract_operator, 10)
 Evaluator.register_infix("*", _mult_operator, 20)

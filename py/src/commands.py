@@ -72,9 +72,9 @@ That's all.
     Command(["roll"], command_roll, "Roll some dice.",
 f"""
 __**roll**__
-Rolls a dice. 
+Rolls some dice and does some math.
 The parser handles some of the usual dice notation (https://en.wikipedia.org/wiki/Dice_notation).
-Here's what it can do. 
+Here's what it can do.
 
 __Basic arithmetic.__ `+, -, *, /, ^ (power, not xor)`
     Use as you'd expect. `1+4`, `2*8`, `4^3^2`...
