@@ -2,7 +2,6 @@
 # Parser and evaluator for dice roll inputs.
 
 # TODOs:
-# keep operators
 # parens for grouping
 # clean up tokenizer
 
@@ -53,8 +52,7 @@ def symbolize(symbol_table, tokens):
         try: # look up symbol type
             symbol = symbol_table[symbol_id]
         except KeyError:
-            print(f"Failed to find symbol type for token {pretoken}")
-            raise
+            raise SyntaxError(f"Failed to find symbol type for token {pretoken}")
 
         token = symbol()
         if pretoken.type == "NUMBER":
@@ -114,16 +112,22 @@ def dice_roll(count, size):
     total = -sum(rolls) if negative else sum(rolls)
     return DiceResult(count, size, total, rolls, negative, [])
 
-def dice_drop(dice, n, high=False):
+# Drop some dice from a roll and update its total.
+# Defaults to dropping the `n` lowest dice.
+# `high` option means dropping high dice.
+# `keep` option means keeping `n` dice and dropping the rest.
+def dice_drop(dice, n, high=False, keep=False):
     if not isinstance(dice, DiceResult):
         raise SyntaxError(f"Failed to drop dice (not a dice roll?)")
     n = force_integral(n, "dice to drop")
+    if keep:
+        n = dice.count - n
     if n < 0:
         raise ValueError(f"Can't drop negative dice ({n})")
     if n == 0:
         return DiceResult(dice.count, dice.size, dice.total, dice.rolls, dice.negative, [])
 
-    sdice = sorted(list(enumerate(dice.rolls)), key=lambda x:x[1], reverse=high)
+    sdice = sorted(list(enumerate(dice.rolls)), key=lambda x:x[1], reverse=high^keep)
     dropped = [x[0] for x in sdice[:n]]
     total = 0
     for i in range(len(dice.rolls)):
@@ -161,8 +165,6 @@ class Evaluator:
         _kind = None
         # literal value or computation result
         value = None
-        # string representation, as input was interpreted
-        raw = None
         # detailed info on operator computation such as dice resolution
         detail = None
 
@@ -193,7 +195,7 @@ class Evaluator:
                     dice_size = self.first.describe(breakout) if self.second == None else self.second.describe(breakout)
                     return f"[{dice_count}d{dice_size}{dice_breakout}={self.value}]"
                 else:
-                    return f"[{self.first.detail}{self._kind}{self.second.describe(breakout)}{dice_breakout}={self.value}]"
+                    return f"[{self.first.describe()}{self._kind}{self.second.describe(breakout)}{dice_breakout}={self.value}]"
             if self.first != None and self.second != None: # infix
                 return f"{self.first.describe(breakout)}{self._kind}{self.second.describe(breakout)}"
             if self.first != None: # prefix
@@ -287,47 +289,45 @@ def format_roll_results(results):
 
 def _dice_operator(node, x, y):
     node.detail = dice_roll(x.value, y.value)
-    node.raw = node.detail.base_roll()
     node.value = node.detail.total
 
 def _dice_operator_prefix(node, x):
     node.detail = dice_roll(1, x.value)
-    node.raw = node.detail.base_roll()
     node.value = node.detail.total
 
 def _dice_drop_low_operator(node, x, y):
     node.detail = dice_drop(x.detail, y.value)
-    node.raw = node.detail.base_roll() + "with drops"
     node.value = node.detail.total
 
 def _dice_drop_high_operator(node, x, y):
     node.detail = dice_drop(x.detail, y.value, high=True)
-    node.raw = node.detail.base_roll() + "with drops"
+    node.value = node.detail.total
+
+def _dice_keep_low_operator(node, x, y):
+    node.detail = dice_drop(x.detail, y.value, high=False, keep=True)
+    node.value = node.detail.total
+
+def _dice_keep_high_operator(node, x, y):
+    node.detail = dice_drop(x.detail, y.value, high=True, keep=True)
     node.value = node.detail.total
 
 def _add_operator(node, x, y):
     node.value = x.value+y.value
-    node.raw = f"{x}+{y}"
 
 def _subtract_operator(node, x, y):
     node.value = x.value-y.value
-    node.raw = f"{x}-{y}"
 
 def _negate_operator(node, x):
     node.value = -x.value
-    node.raw = f"-{x}"
 
 def _mult_operator(node, x, y):
     node.value = x.value*y.value
-    node.raw = f"{x}*{y}"
 
 def _div_operator(node, x, y):
     node.value = x.value/y.value
-    node.raw = f"{x}/{y}"
 
 def _pow_operator(node, x, y):
     node.value = x.value ** y.value
-    node.raw = f"{x}^{y}"
 
 def _number_nud(self, ev):
     self.raw = f"{self.value}"
@@ -346,6 +346,8 @@ Evaluator.register_infix("d", _dice_operator, 200)
 Evaluator.register_prefix("d", _dice_operator_prefix, 200)
 Evaluator.register_infix("dl", _dice_drop_low_operator, 190)
 Evaluator.register_infix("dh", _dice_drop_high_operator, 190)
+Evaluator.register_infix("kl", _dice_keep_low_operator, 190)
+Evaluator.register_infix("kh", _dice_keep_high_operator, 190)
 
 if __name__ == "__main__":
     while True:
