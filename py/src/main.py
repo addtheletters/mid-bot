@@ -1,5 +1,6 @@
 # A bot with some basic custom skills.
 from commands import *
+from config import *
 from dotenv import load_dotenv
 from utils import reply, print_message
 import discord
@@ -8,16 +9,8 @@ import os
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 
-BOT_SUMMON_PREFIX = "~"
-DEFAULT_HELP_KEY = "help"
-
-# Add commands here. Commands need at least one key and a function to perform.
-COMMAND_CONFIG = [
-    Command([DEFAULT_HELP_KEY], command_help, "List available commands."),
-    Command(["echo", "repeat"], command_echo, "Repeat your message back."),
-    Command(["shrug"], command_shruggie, "Shruggie."),
-    Command(["roll"], command_roll, "Roll some dice."),
-]
+def help_notice():
+    return f"See `{BOT_SUMMON_PREFIX}{DEFAULT_HELP_KEY}`."
 
 class MidClient(discord.Client):
     def __init__(self):
@@ -48,7 +41,6 @@ class MidClient(discord.Client):
         return msg.content.startswith(BOT_SUMMON_PREFIX) or self.user in msg.mentions
 
     async def process_message(self, msg):
-        print(f"Processing message {msg.id}.")
         if msg.channel == None:
             print("Missing channel, can't reply.")
             return
@@ -63,7 +55,7 @@ class MidClient(discord.Client):
             intext = msg.content[len(BOT_SUMMON_PREFIX):].strip()
             tokens = intext.split()
             if len(tokens) < 1: # nothing following the prefix
-                await reply(msg, f"The bot hears you. See `{BOT_SUMMON_PREFIX}{DEFAULT_HELP_KEY}`.")
+                await reply(msg, f"The bot hears you. {help_notice()}")
                 return
             command = tokens[0]
             intext = intext[len(command)+1:].strip() # trim off command text
@@ -71,7 +63,7 @@ class MidClient(discord.Client):
             if command in self.commands.keys():
                 await self.commands[command].func(self, msg, intext)
             else:
-                await reply(msg, f"Unrecognized command `{command}`. See `{BOT_SUMMON_PREFIX}{DEFAULT_HELP_KEY}`.")
+                await reply(msg, f"Unrecognized command `{command}`. {help_notice()}")
 
 if __name__ == "__main__":
     client = MidClient()
