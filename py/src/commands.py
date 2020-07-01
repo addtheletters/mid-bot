@@ -73,22 +73,24 @@ That's all.
 f"""
 __**roll**__
 Rolls some dice and does some math.
-The parser handles some of the usual dice notation (https://en.wikipedia.org/wiki/Dice_notation).
+This handles a basic subset of standard dice notation (https://en.wikipedia.org/wiki/Dice_notation).
 Here's what it can do.
 
-__Basic arithmetic.__ `+, -, *, /, ^ (power, not xor)`
+__Basic arithmetic.__ `+ - * / ^ (power, not xor)`
     Use as you'd expect. `1+4`, `2*8`, `4^3^2`...
-__Dice roll.__ `d`
+__Dice roll__ `d`
     Use as `<N>d<S>`, which rolls `<N>` dice of size `<S>`, adding together the results.
     `<N>` and `<S>` must resolve to positive integers.
     `<N>` can be omitted; this will roll 1 dice.
     Example: `{BOT_SUMMON_PREFIX}roll 8d6`
-__Keep/Drop.__ `kh` (keep high), `kl` (keep low), `dh` (drop high), `dl` (drop low).
+__Keep/Drop__ `kh` (keep high), `kl` (keep low), `dh` (drop high), `dl` (drop low)
     Use as `<diceroll>kh<N>` to keep the `<N>` highest dice from `<diceroll>`.
     `<diceroll>` must be some rolled dice (use of the `d` operator).
     `<N>` must resolve to a positive integer.
     Example: `{BOT_SUMMON_PREFIX}roll 4d6kh3`
-__Semicolons__ act as dividers, allowing several independent rolls from one message.
+__Parentheses__ `( )` enforce associativity and order of operations.
+    Example: `{BOT_SUMMON_PREFIX}roll 3d((2+23)/5)`
+__Semicolons__ `;` act as dividers, allowing several independent rolls from one message.
     Example: `{BOT_SUMMON_PREFIX}roll 1d20+5; 2d6+5`
 """),
 ]
