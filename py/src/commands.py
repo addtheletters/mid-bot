@@ -76,7 +76,7 @@ Rolls some dice and does some math.
 This handles a basic subset of standard dice notation (https://en.wikipedia.org/wiki/Dice_notation).
 Here's what it can do.
 
-__Basic arithmetic.__ `+ - * / ^ (power, not xor)`
+__Basic arithmetic__ `+ - * / ^ (power, not xor)`
     Use as you'd expect. `1+4`, `2*8`, `4^3^2`...
 __Dice roll__ `d`
     Use as `<N>d<S>`, which rolls `<N>` dice of size `<S>`, adding together the results.

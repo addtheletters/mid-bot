@@ -170,6 +170,14 @@ class Evaluator:
         # detailed info on operator computation such as dice resolution
         detail = None
 
+        # TODO: consider having breakout show intermediate values as long as
+        # they were reached without any random choice.
+        # during computation, mark nodes as requiring dice if
+        # any children has_dice or was a dice roll
+
+        # does this result depend on resolved dice rolls?
+        #has_dice = False
+
         # parse tree links
         first = None
         second = None
@@ -189,18 +197,19 @@ class Evaluator:
         # Recursively describe the expression, showing detailed dice roll information
         def describe(self, breakout=False):
             if breakout and self._kind in ("d", "dl", "dh", "kl", "kh"):
-                dice_breakout = self.detail.breakout()
+                dice_breakout = " " + self.detail.breakout()
                 if self._kind == "d":
                     if self.detail.count < 2:
                         dice_breakout = ""
                     dice_count = "" if self.second == None else self.first.describe(breakout)
                     dice_size = self.first.describe(breakout) if self.second == None else self.second.describe(breakout)
-                    return f"[{dice_count}d{dice_size} {dice_breakout}={self.value}]"
+                    return f"[{dice_count}d{dice_size}{dice_breakout}={self.value}]"
                 else:
-                    return f"[{self.first.describe()}{self._kind}{self.second.describe(breakout)} {dice_breakout}={self.value}]"
+                    return f"[{self.first.describe()}{self._kind}{self.second.describe(breakout)}{dice_breakout}={self.value}]"
             if self._kind == "(": # parenthesis group
-                return "(" + self.first.describe() + ")"
+                return "(" + self.first.describe(breakout) + ")"
             if self.first != None and self.second != None: # infix
+                if self.first._kind !=
                 return f"{self.first.describe(breakout)}{escape(self._kind)}{self.second.describe(breakout)}"
             if self.first != None: # prefix
                 return f"{self._kind}{self.first.describe(breakout)}"
@@ -287,7 +296,7 @@ def roll(intext):
 def format_roll_results(results):
     out = ""
     for row in results:
-        out += f"{row.describe(False)} => {row.value}  |  {row.describe(True)}"
+        out += f"{row.describe(False)} => **{row.value}**  |  {row.describe(True)}"
         out += "\n"
     return out
 
