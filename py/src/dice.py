@@ -66,7 +66,8 @@ def symbolize(symbol_table, tokens):
         all_rolls.append(current_roll)
     return all_rolls
 
-class DiceResult(collections.namedtuple("DiceResult", ["count", "size", "total", "rolls", "negative", "dropped"])):
+class DiceResult(collections.namedtuple("DiceResult",
+        ["count", "size", "total", "rolls", "negative", "dropped"])):
     def full_detail(self):
         return f"[{self.base_roll()} = {self.negated()}{self.breakout()} = {str(self.total)}]"
     def breakout(self):
@@ -374,5 +375,9 @@ if __name__ == "__main__":
         try:
             results = roll(intext)
             print(format_roll_results(results))
-        except (ArithmeticError, ValueError, RuntimeError, StopIteration, SyntaxError) as err:
+        except (ArithmeticError, 
+                ValueError, 
+                RuntimeError, 
+                StopIteration, 
+                SyntaxError) as err:
             print(f"{err}")

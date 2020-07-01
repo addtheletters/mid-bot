@@ -2,49 +2,43 @@
 from collections import namedtuple
 from config import *
 from random import randint
-from utils import escape, reply
+from utils import escape
+import asyncio
 import discord
 import dice
 
 Command = namedtuple("Command", ["keys", "func", "info", "detailed"])
 
-async def command_help(client, msg, intext):
+def command_help(intext):
     if len(intext) < 1: # show command list
-        shown = set()
         help_info = "```Available commands:\n"
-        for key in client.commands.keys():
-            if key in shown:
-                continue
-            cmd = client.commands[key]
+        for cmd in COMMAND_CONFIG:
             help_info += f"{cmd.keys}: {cmd.info}\n"
-            for altkey in cmd.keys:
-                shown.add(altkey)
         help_info += "```"
-        await reply(msg, help_info)
+        return help_info
     else: # fetch detailed command help
         key = intext.split(" ")[0]
-        try:
-            cmd = client.commands[key]
-            await reply(msg, cmd.detailed)
-        except KeyError:
-            await reply(msg, f"No help available for unknown command `{key}`.")
+        for cmd in COMMAND_CONFIG:
+            if key in cmd.keys:
+                return cmd.detailed    
+        return f"No help available for unknown command `{key}`."
 
-async def command_echo(client, msg, intext):
+def command_echo(intext):
     if len(intext) == 0:
-        await reply(msg, f"There is only silence.")
+        return f"There is only silence."
     else:
-        await reply(msg, f"`{intext}`")
+        return f"{intext}"
 
-async def command_shruggie(client, msg, intext):    
-    await reply(msg, escape("¯\\_(ツ)_/¯"))
+def command_shruggie(intext):
+    return escape("¯\\_(ツ)_/¯")
 
-async def command_roll(client, msg, intext):
+def command_roll(intext):
     try:
         roll_result = dice.roll(intext)
-        await reply(msg, dice.format_roll_results(roll_result))
+        return dice.format_roll_results(roll_result)
     except Exception as err:
         print(f"Roll error: {err}")
-        await reply(msg, f"Input not accepted.\n```{err}```")
+        return f"Input not accepted.\n```{err}```"
 
 # Add commands here. Commands need at least one key and a function to perform.
 COMMAND_CONFIG = [
@@ -61,7 +55,6 @@ f"""
 __**echo**__
 Sends the contents of your message back to you.
 The command keyword and bot prefix are excluded.
-Content is wrapped in backquotes with the intention that Discord will display it as a code block; backquotes in your original message can easily break this.
 """),
     Command(["shrug"], command_shruggie, "Shruggie.",
 """

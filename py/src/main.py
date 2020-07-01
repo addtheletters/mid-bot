@@ -3,6 +3,8 @@ from commands import *
 from config import *
 from dotenv import load_dotenv
 from utils import reply, print_message
+import asyncio
+import concurrent.futures
 import discord
 import os
 
@@ -15,12 +17,29 @@ def help_notice():
 class MidClient(discord.Client):
     def __init__(self):
         discord.Client.__init__(self)
+        self.executor = concurrent.futures.ProcessPoolExecutor(max_workers=MAX_COMMAND_WORKERS)
+
         self.commands = {}
         for cmd in COMMAND_CONFIG:
             for key in cmd.keys:
-                if key in self.commands.keys():
-                    print(f"Key {key} is overloaded. Fix the command configuration.")
-                self.commands[key] = cmd
+                self.register_command(key, cmd)
+
+    def register_command(self, key, cmd):
+        if key in self.commands.keys():
+            print(f"Key {key} is overloaded. Fix the command configuration.")
+        self.commands[key] = cmd
+        if key not in cmd.keys:
+            cmd.keys.append(key)
+
+    async def execute_command(self, command_key, msg, intext):
+        event_loop = asyncio.get_event_loop()
+        cmd_future = event_loop.run_in_executor(self.executor, self.commands[command_key].func, intext)
+        try:
+            response = await asyncio.wait_for(cmd_future, timeout=COMMAND_TIMEOUT)
+            return response
+        except asyncio.TimeoutError:
+            print(f"Command {command_key} timed out on input: {intext}. Resetting executor.")
+            raise
 
     async def on_ready(self):
         print(f"{self.user} is now connected to Discord in guilds: {[g.name for g in self.guilds]}")
@@ -61,7 +80,13 @@ class MidClient(discord.Client):
             intext = intext[len(command)+1:].strip() # trim off command text
 
             if command in self.commands.keys():
-                await self.commands[command].func(self, msg, intext)
+                try:
+                    command_response = await self.execute_command(command, msg, intext)
+                    if len(command_response) > 0:
+                        await reply(msg, command_response)
+                    return
+                except concurrent.futures.TimeoutError:
+                    await reply(msg, f"Command execution timed out for `{command}`.")
             else:
                 await reply(msg, f"Unrecognized command `{command}`. {help_notice()}")
 
