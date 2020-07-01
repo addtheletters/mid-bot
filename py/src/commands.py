@@ -41,6 +41,7 @@ def command_roll(intext):
         return f"Input not accepted.\n```{err}```"
 
 # Add commands here. Commands need at least one key and a function to perform.
+# A command function can return a string which will be sent as a response.
 COMMAND_CONFIG = [
     Command(["help"], command_help,
         f"List available commands or show usage ({BOT_SUMMON_PREFIX}{DEFAULT_HELP_KEY} {DEFAULT_HELP_KEY}).",

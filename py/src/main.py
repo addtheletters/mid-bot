@@ -32,7 +32,7 @@ class MidClient(discord.Client):
             cmd.keys.append(key)
 
     async def execute_command(self, command_key, msg, intext):
-        event_loop = asyncio.get_event_loop()
+        event_loop = self.loop
         cmd_future = event_loop.run_in_executor(self.executor, self.commands[command_key].func, intext)
         try:
             response = await asyncio.wait_for(cmd_future, timeout=COMMAND_TIMEOUT)
@@ -82,7 +82,7 @@ class MidClient(discord.Client):
             if command in self.commands.keys():
                 try:
                     command_response = await self.execute_command(command, msg, intext)
-                    if len(command_response) > 0:
+                    if command_response != None and len(command_response) > 0:
                         await reply(msg, command_response)
                     return
                 except concurrent.futures.TimeoutError:
