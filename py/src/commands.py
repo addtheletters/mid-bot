@@ -1,7 +1,7 @@
 # Commands.
 from collections import namedtuple
 from random import randint
-from utils import reply
+from utils import escape, reply
 import discord
 import dice
 
@@ -27,7 +27,7 @@ async def command_echo(client, msg, intext):
         await reply(msg, f"`{intext}`")
 
 async def command_shruggie(client, msg, intext):    
-    await reply(msg, discord.utils.escape_markdown("¯\\_(ツ)_/¯"))
+    await reply(msg, escape("¯\\_(ツ)_/¯"))
 
 async def command_roll(client, msg, intext):
     try:
@@ -35,4 +35,4 @@ async def command_roll(client, msg, intext):
         await reply(msg, dice.format_roll_results(roll_result))
     except Exception as err:
         print(f"Roll error: {err}")
-        await reply(msg, f"Ye input `{intext}` hath caused an error.\n```{err}```")
+        await reply(msg, f"Input not accepted.\n```{err}```")
