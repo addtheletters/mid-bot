@@ -209,7 +209,6 @@ class Evaluator:
             if self._kind == "(": # parenthesis group
                 return "(" + self.first.describe(breakout) + ")"
             if self.first != None and self.second != None: # infix
-                if self.first._kind !=
                 return f"{self.first.describe(breakout)}{escape(self._kind)}{self.second.describe(breakout)}"
             if self.first != None: # prefix
                 return f"{self._kind}{self.first.describe(breakout)}"
