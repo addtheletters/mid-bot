@@ -30,5 +30,6 @@ class ExperimentClient(discord.Client):
         print(f'{message.created_at}: [{message.channel}] <{message.author}> {message.content}')
         await message.add_reaction(self.ack_emoji)
 
-client = ExperimentClient()
-client.run(TOKEN)
+if __name__ == "__main__":
+    client = ExperimentClient()
+    client.run(TOKEN)
