@@ -137,7 +137,7 @@ class MidClient(discord.Client):
                 await reply(msg, f"Summon me using: {codeblock(summon_text)}")
                 return
 
-            intext = msg.content[len(BOT_SUMMON_PREFIX):].strip()
+            intext = msg.content[len(BOT_SUMMON_PREFIX):].strip().replace(INVISIBLE_SPACE, "")
             tokens = intext.split()
             if len(tokens) < 1: # nothing following the prefix
                 await reply(msg, f"The bot hears you. {help_notice()}")
