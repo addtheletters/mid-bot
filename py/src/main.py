@@ -2,6 +2,8 @@
 from commands import *
 from config import *
 from dotenv import load_dotenv
+from multiprocessing import Lock
+from multiprocessing.managers import SyncManager
 from pebble import ProcessPool
 from utils import reply, log_message
 import asyncio
@@ -22,7 +24,7 @@ def help_notice():
 # Wrapper for ProcessPool to allow use with asyncio run_in_executor
 class PebbleExecutor(concurrent.futures.Executor):
     def __init__(self, max_workers, timeout=None):
-        self.pool = ProcessPool(max_workers=MAX_COMMAND_WORKERS)
+        self.pool = ProcessPool(max_workers=max_workers)
         self.timeout = timeout
 
     def submit(self, fn, *args, **kwargs):
@@ -41,12 +43,21 @@ class PebbleExecutor(concurrent.futures.Executor):
         self.pool.join()
         log.info("Workers joined.")
 
+class ClientData:
+    pass
+
+class DataManager(SyncManager):
+    def __init__(self):
+        SyncManager.__init__(self)
+
 class MidClient(discord.Client):
     def __init__(self):
         discord.Client.__init__(self)
         self.executor = PebbleExecutor(
             MAX_COMMAND_WORKERS,
             COMMAND_TIMEOUT)
+        self.sync_manager = None
+        self.data = None
 
         self.commands = {}
         for cmd in COMMAND_CONFIG:
@@ -54,9 +65,12 @@ class MidClient(discord.Client):
                 self.register_command(key, cmd)
 
     # Override. Functionally near-identical to discord.Client.
+    # Set up manager and tear down upon exit.
     # Prevent main loop from exiting on subprocess SIGINT/SIGTERM.
     # Clean up executor workers upon completion.
     def run(self, *args, **kwargs):
+        self.setup_manager()
+
         loop = self.loop
         async def runner():
             try:
@@ -81,6 +95,19 @@ class MidClient(discord.Client):
         if not future.cancelled():
             return future.result()
         self.executor.shutdown(False)
+        if self.sync_manager != None:
+            self.sync_manager.shutdown()
+
+    def setup_manager(self):
+        if self.sync_manager != None:
+            log.info("Sync manager already started.")
+            return
+        DataManager.register("Data", ClientData)
+        self.sync_manager = DataManager()
+        self.sync_manager.start()
+        log.info("Sync manager started.")
+        self.data = self.sync_manager.Data()
+        log.info(f"Data: {self.data}")
 
     def register_command(self, key, cmd):
         if key in self.commands.keys():
@@ -90,9 +117,12 @@ class MidClient(discord.Client):
             cmd.keys.append(key)
 
     async def execute_command(self, command_key, msg, intext):
-        cmd_future = self.loop.run_in_executor(self.executor, self.commands[command_key].func, intext)
+        cmd_future = self.loop.run_in_executor(self.executor,
+                            self.commands[command_key].func,
+                            intext, self.data)
         try:
-            response = await asyncio.wait_for(cmd_future, timeout=COMMAND_TIMEOUT)
+            response = await asyncio.wait_for(cmd_future,
+                                              timeout=COMMAND_TIMEOUT)
             return response
         except concurrent.futures.TimeoutError:
             log.info(f"Command {command_key} timed out on input: {intext}.")
@@ -104,7 +134,8 @@ class MidClient(discord.Client):
             raise
 
     async def on_ready(self):
-        log.info(f"{self.user} is now connected to Discord in guilds: {[g.name for g in self.guilds]}")
+        log.info(f"{self.user} is now connected to Discord in guilds:"\
+                +f"{[g.name for g in self.guilds]}")
 
     async def on_message(self, msg):
         if (self.should_process_message(msg)):

@@ -6,10 +6,13 @@ from utils import escape, codeblock
 import asyncio
 import discord
 import dice
+import logging
+
+log = logging.getLogger(__name__)
 
 Command = namedtuple("Command", ["keys", "func", "info", "detailed"])
 
-def command_help(intext):
+def command_help(intext, *args):
     if len(intext) < 1: # show command list
         help_info = "Available commands:\n"
         for cmd in COMMAND_CONFIG:
@@ -22,22 +25,29 @@ def command_help(intext):
                 return cmd.detailed    
         return f"No help available for unknown command {codeblock(key)}."
 
-def command_echo(intext):
+def command_echo(intext, *args):
     if len(intext) == 0:
         return f"There is only silence."
     else:
         return f"{intext}"
 
-def command_shruggie(intext):
+def command_shruggie(intext, *args):
     return escape("¯\\_(ツ)_/¯")
 
-def command_roll(intext):
+def command_roll(intext, *args):
     try:
         roll_result = dice.roll(intext)
         return dice.format_roll_results(roll_result)
     except Exception as err:
-        print(f"Roll error: {err}")
+        log.info(f"Roll error: {err}")
         return f"Input not accepted.\n{codeblock(err, big=True)}"
+
+def command_holdem(intext, *args):
+    log.info(f"args: {args}")
+    if len(intext) == 0:
+        return "A dry wind blows in from the west."
+    subcommand = intext.split(" ")[0]
+    return f"Subcommand: {subcommand}"        
 
 # Add commands here. Commands need at least one key and a function to perform.
 # A command function can return a string which will be sent as a response.
@@ -86,4 +96,9 @@ __Parentheses__ `( )` enforce associativity and order of operations.
 __Semicolons__ `;` act as dividers, allowing several independent rolls from one message.
     Example: `{BOT_SUMMON_PREFIX}roll 1d20+5; 2d6+5`
 """),
+    Command(["holdem"], command_holdem, "Play Texas Hold'em poker.",
+f"""
+__**holdem**__
+Throws out cards for a game of Texas Hold'em.
+""")
 ]

@@ -178,7 +178,8 @@ class Evaluator:
         try:
             self.token_current = next(self.token_iter)
         except StopIteration as err:
-            raise StopIteration(f"Expected further input. Missing operands?")
+            raise StopIteration(
+                f"Expected further input. Missing operands?") from err
         return self.token_current
 
     def _current(self):
