@@ -3,6 +3,7 @@
 
 import collections, re
 from random import randint
+from utils import escape, codeblock
 
 ProtoToken = collections.namedtuple("ProtoToken", ["type", "value"])
 
@@ -13,7 +14,8 @@ TOKEN_SPEC = [
     ("SKIP",     r"[ \t]+"),       # Skip over spaces and tabs
     ("MISMATCH", r"."),            # Any other character
 ]
-TOKEN_PATTERN = re.compile('|'.join(f"(?P<{pair[0]}>{pair[1]})" for pair in TOKEN_SPEC))
+TOKEN_PATTERN = re.compile(
+    '|'.join(f"(?P<{pair[0]}>{pair[1]})" for pair in TOKEN_SPEC))
 
 # Cut input into tokens.
 # Based on tokenizer sample from the python docs.
@@ -32,7 +34,7 @@ def tokenize(intext):
         elif kind == "SKIP":
             continue
         elif kind == "MISMATCH":
-            raise RuntimeError(f"Couldn't interpret `{value}` from: {intext}")
+            raise RuntimeError(f"Couldn't interpret <{value}> from: {intext}")
         
         tokens.append(ProtoToken(kind, value))
     return tokens
@@ -48,7 +50,8 @@ def symbolize(symbol_table, tokens):
         try: # look up symbol type
             symbol = symbol_table[symbol_id]
         except KeyError:
-            raise SyntaxError(f"Failed to find symbol type for token {pretoken}")
+            raise SyntaxError(
+                f"Failed to find symbol type for token {pretoken}")
 
         token = symbol()
         if pretoken.type == "NUMBER":
@@ -65,11 +68,10 @@ def symbolize(symbol_table, tokens):
         all_rolls.append(current_roll)
     return all_rolls
 
-class DiceResult(collections.namedtuple("DiceResult", ["count", "size", "total", "rolls", "negative", "dropped"])):
-    def full_detail(self):
-        return f"[{self.base_roll()} = {self.negated()}{self.breakout()} = {str(self.total)}]"
+class DiceResult(collections.namedtuple("DiceResult",
+        ["count", "size", "total", "rolls", "negative", "dropped"])):
     def breakout(self):
-        drops_striked = [f"~~{self.rolls[i]}~~" if i in self.dropped else f"{self.rolls[i]}" for i in range(len(self.rolls))]
+        drops_striked = format_dropped(self.rolls, self.dropped)
         return f"({'+'.join(drops_striked)})"
     def negated(self):
         return f"{'-' if self.negative else ''}"
@@ -77,6 +79,15 @@ class DiceResult(collections.namedtuple("DiceResult", ["count", "size", "total",
         return f"{self.count}d{self.size}"
     def __repr__(self):
         return self.base_roll()
+
+def format_dropped(rolls, dropped):
+    results = []
+    for i in range(len(rolls)):
+        if i in dropped:
+            results.append(f"~~{rolls[i]}~~")
+        else:
+            results.append(f"{rolls[i]}")
+    return results
 
 def force_integral(value, description=""):
     if isinstance(value, int):
@@ -117,14 +128,31 @@ def dice_drop(dice, n, high=False, keep=False):
         raise SyntaxError(f"Failed to drop dice (not a dice roll?)")
     n = force_integral(n, "dice to drop")
     if keep:
-        n = dice.count - n
+        if n < 0:
+            raise ValueError(f"Can't keep negative dice ({n})")
+        # if keeping dice, we're dropping a complementary dice.
+        # if we've already dropped more than that, we don't need to drop more.
+        n = dice.count - len(dice.dropped) - n
+        if n < 0: # allow keeping more dice than are rolled (drop none)
+            n = 0
     if n < 0:
         raise ValueError(f"Can't drop negative dice ({n})")
     if n == 0:
-        return DiceResult(dice.count, dice.size, dice.total, dice.rolls, dice.negative, [])
+        return DiceResult(
+            dice.count, dice.size, dice.total, dice.rolls, dice.negative,
+            dice.dropped)
 
-    sdice = sorted(list(enumerate(dice.rolls)), key=lambda x:x[1], reverse=high^keep)
-    dropped = [x[0] for x in sdice[:n]]
+    # sort and pair with indices
+    sdice = sorted(list(enumerate(dice.rolls)),
+                    key=lambda x:x[1],
+                    reverse=high^keep)
+
+    # remove already dropped
+    sdice = list(filter(lambda x: x[0] not in dice.dropped, sdice))
+
+    # drop n more dice
+    new_drops = [x[0] for x in sdice[:n]]
+    dropped = dice.dropped + new_drops
     total = 0
     for i in range(len(dice.rolls)):
         if i not in dropped:
@@ -132,7 +160,8 @@ def dice_drop(dice, n, high=False, keep=False):
     if dice.negative:
         total = -total
 
-    return DiceResult(dice.count, dice.size, total, dice.rolls, dice.negative, dropped)
+    return DiceResult(
+        dice.count, dice.size, total, dice.rolls, dice.negative, dropped)
 
 # Based on Pratt top-down operator precedence.
 # http://effbot.org/zone/simple-top-down-parsing.htm
@@ -172,7 +201,7 @@ class Evaluator:
         # parse tree links
         first = None
         second = None
-        
+
         # operator binding power, 0 for literals.
         bp = 0
 
@@ -185,24 +214,46 @@ class Evaluator:
         def as_infix(self, evaluator, left):
             raise SyntaxError(f"Unexpected symbol: {self}")
 
-        # Recursively describe the expression, showing detailed dice roll information
-        def describe(self, breakout=False):
-            if breakout and self._kind in ("d", "dl", "dh", "kl", "kh"):
-                dice_breakout = self.detail.breakout()
+        # Recursively describe the expression, showing detailed dice roll
+        # information
+        # `breakout` means show the result of each dice rolled by
+        #     the 'd' operator, and strikethrough dropped.
+        # `predrop` helps format drop/keep operator, preventing the child
+        #     'd' operator from showing its breakout.
+        # `op_escape` when true will escape markdown around operator
+        #     characters. Should be False when formatting for a code block.
+        # `ex_ar` to expand intermediate arithmetic lacking dice rolls.
+        def describe(self, breakout=False, op_escape=True,
+                     ex_ar=False, predrop=False):
+            if (not ex_ar) and (not self.contains_diceroll()):
+                if self.value != None:
+                    return f"{self.value}"
+            if (not predrop) and breakout and self.is_diceroll():
+                dice_breakout = " " + self.detail.breakout()
                 if self._kind == "d":
                     if self.detail.count < 2:
                         dice_breakout = ""
-                    dice_count = "" if self.second == None else self.first.describe(breakout)
-                    dice_size = self.first.describe(breakout) if self.second == None else self.second.describe(breakout)
-                    return f"[{dice_count}d{dice_size} {dice_breakout}={self.value}]"
+                    dice_count = "" if self.second == None\
+                                    else self.first.describe(breakout, op_escape, ex_ar)
+                    dice_size = self.first.describe(breakout, op_escape, ex_ar)\
+                                    if self.second == None\
+                                    else self.second.describe(breakout, op_escape, ex_ar)
+                    return f"[{dice_count}d{dice_size}"+\
+                            f"{dice_breakout}={self.value}]"
                 else:
-                    return f"[{self.first.describe()}{self._kind}{self.second.describe(breakout)} {dice_breakout}={self.value}]"
+                    return f"[{self.first.describe(breakout, op_escape, ex_ar, predrop=True)}"+\
+                            f"{self._kind}{self.second.describe(breakout, op_escape, ex_ar)}"+\
+                            f"{dice_breakout}={self.value}]"
             if self._kind == "(": # parenthesis group
-                return "(" + self.first.describe() + ")"
+                return "(" + self.first.describe(breakout, op_escape, ex_ar) + ")"
             if self.first != None and self.second != None: # infix
-                return f"{self.first.describe(breakout)}{self._kind}{self.second.describe(breakout)}"
+                op = self._kind
+                if op_escape:
+                    op = escape(op)
+                return f"{self.first.describe(breakout, op_escape, ex_ar)}{op}"+\
+                        f"{self.second.describe(breakout, op_escape, ex_ar)}"
             if self.first != None: # prefix
-                return f"{self._kind}{self.first.describe(breakout)}"
+                return f"{self._kind}{self.first.describe(breakout, op_escape, ex_ar)}"
             else:
                 return f"{self}"
 
@@ -212,6 +263,20 @@ class Evaluator:
             out = [self._kind, self.first, self.second]
             out = map(str, filter(None, out))
             return "<" + " ".join(out) + ">"
+
+        def is_diceroll(self):
+            return self._kind in ("d", "dl", "dh", "kl", "kh")
+
+        # Is this node dice, or does any node in this subtree have dice?
+        def contains_diceroll(self):
+            if self.is_diceroll():
+                return True
+            if self.first != None:
+                has_dice = self.first.contains_diceroll()
+                if self.second != None:
+                    has_dice = has_dice or self.second.contains_diceroll()
+                return has_dice
+            return False
 
     # Parse and evaluate an expression from symbols. Recursive.
     def expr(self, right_bp=0):
@@ -249,7 +314,7 @@ class Evaluator:
             self.second = None
             func(self, self.first)
             return self
-        s = Evaluator.register_symbol(kind) # note we don't assign bp for prefix
+        s = Evaluator.register_symbol(kind) # don't assign to bp for prefix
         s.as_prefix = _as_prefix
         return s
 
@@ -257,7 +322,8 @@ class Evaluator:
     def register_infix(kind, func, bind_power, right_assoc=False):
         def _as_infix(self, evaluator, left):
             self.first = left
-            self.second = evaluator.expr(bind_power - (1 if right_assoc else 0))
+            self.second = evaluator.expr(
+                bind_power - (1 if right_assoc else 0))
             func(self, self.first, self.second)
             return self
         s = Evaluator.register_symbol(kind, bind_power)
@@ -286,7 +352,11 @@ def roll(intext):
 def format_roll_results(results):
     out = ""
     for row in results:
-        out += f"`{row.describe(False)}` => {row.value}  |  {row.describe(True)}"
+        out += codeblock(row.describe(breakout=False,
+                                      op_escape=False,
+                                      ex_ar=True))+\
+                f"=> **{row.value}**"+\
+                f"  |  {row.describe(breakout=True)}"
         out += "\n"
     return out
 
@@ -338,6 +408,7 @@ def _number_nud(self, ev):
 def _left_paren_nud(self, ev):
     self.first = ev.expr()
     self.value = self.first.value
+    self.detail = self.first.detail
     ev.advance(expected=")")
     return self
 
@@ -365,5 +436,9 @@ if __name__ == "__main__":
         try:
             results = roll(intext)
             print(format_roll_results(results))
-        except (ArithmeticError, ValueError, RuntimeError, StopIteration, SyntaxError) as err:
+        except (ArithmeticError, 
+                ValueError, 
+                RuntimeError, 
+                StopIteration, 
+                SyntaxError) as err:
             print(f"{err}")
