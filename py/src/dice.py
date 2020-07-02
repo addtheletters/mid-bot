@@ -9,7 +9,7 @@ from utils import escape, codeblock
 ProtoToken = collections.namedtuple("ProtoToken", ["type", "value"])
 
 KEYWORDS = [
-    "C", "repeat", "sqrt",
+    "C", "choose", "repeat", "sqrt",
 ]
 KEYWORD_PATTERN = '|'.join(KEYWORDS)
 TOKEN_SPEC = [
@@ -203,8 +203,13 @@ class Evaluator:
         _kind = None
         # operator binding power, 0 for literals.
         bp = 0
-        # assume prefix for display purposes
+
+        # show operator after child for display purposes
         _postfix = False
+        # add function-call parens when displaying operator with children
+        _function_like = False
+        # when displaying, insert spaces to separate operator from children
+        _spaces = False
 
         def __init__(self):
             # literal value or computation result
@@ -239,36 +244,56 @@ class Evaluator:
             if (not ex_ar) and (not self.contains_diceroll()):
                 if self.value != None:
                     return f"{self.value}"
+
+            describe_first = self.first.describe(breakout, op_escape, ex_ar)\
+                if self.first != None else ""
+            describe_second = self.second.describe(breakout, op_escape, ex_ar)\
+                if self.second != None else ""
+
             if (not predrop) and breakout and self.is_diceroll():
                 dice_breakout = " " + self.detail.breakout()
                 if self._kind == "d":
                     if self.detail.count < 2:
                         dice_breakout = ""
                     dice_count = "" if self.second == None\
-                                    else self.first.describe(breakout, op_escape, ex_ar)
-                    dice_size = self.first.describe(breakout, op_escape, ex_ar)\
+                                    else describe_first
+                    dice_size = describe_first\
                                     if self.second == None\
-                                    else self.second.describe(breakout, op_escape, ex_ar)
+                                    else describe_second
                     return f"[{dice_count}d{dice_size}"+\
                             f"{dice_breakout}={self.value}]"
                 else:
                     return f"[{self.first.describe(breakout, op_escape, ex_ar, predrop=True)}"+\
-                            f"{self._kind}{self.second.describe(breakout, op_escape, ex_ar)}"+\
+                            f"{self._kind}{describe_second}"+\
                             f"{dice_breakout}={self.value}]"
+            
+            spacer = " " if self._spaces else ""
+
             if self._kind == "(": # parenthesis group
-                return "(" + self.first.describe(breakout, op_escape, ex_ar) + ")"
+                inner = describe_first
+                if inner[len(inner)-1] != ")":
+                    inner = "(" + inner + ")"
+                return inner
+
+            if self._function_like:
+                return f"{self._kind}({self.describe_first},{spacer}{self.describe_second})"
+
             if self.first != None and self.second != None: # infix
                 op = self._kind
                 if op_escape:
                     op = escape(op)
                 ext_predrop = predrop if self.is_dropkeep() else False
-                return f"{self.first.describe(breakout, op_escape, ex_ar, predrop=ext_predrop)}{op}"+\
-                        f"{self.second.describe(breakout, op_escape, ex_ar)}"
+                prewrap = f"{self.first.describe(breakout, op_escape, ex_ar, predrop=ext_predrop)}"+\
+                        f"{spacer}{op}{spacer}"+\
+                        f"{describe_second}"
+                if self._kind == "choose" or self._kind == "C":
+                    return "(" + prewrap + ")"
+                return prewrap
             if self.first != None: # prefix or postfix, one child
-                child_describe = self.first.describe(breakout, op_escape, ex_ar)
+                child_describe = describe_first
                 if self._postfix:
-                    return f"{child_describe}{self._kind}"
-                return f"{self._kind}{child_describe}"
+                    return f"{child_describe}{spacer}{self._kind}"
+                return f"{self._kind}{spacer}{child_describe}"
             else:
                 return f"{self}"
 
@@ -438,6 +463,16 @@ def _pow_operator(node, x, y):
 def _factorial_operator(node, x):
     node.value = factorial(x.value)
 
+def _choose_operator(node, x, y):
+    n = force_integral(x.value, "choice operand")
+    k = force_integral(y.value, "choice operand")
+    if n < 0 or k < 0:
+        raise ValueError("choose operator must have positive operands")
+    if k > n:
+        node.value = 0
+    else:
+        node.value = factorial(n) / (factorial(k) * factorial(n - k))
+
 def _number_nud(self, ev):
     return self
 
@@ -453,19 +488,26 @@ Evaluator.register_symbol("NUMBER").as_prefix = _number_nud
 Evaluator.register_symbol("END")
 Evaluator.register_symbol("(").as_prefix = _left_paren_nud
 Evaluator.register_symbol(")")
+
 Evaluator.register_infix("+", _add_operator, 10)
 Evaluator.register_infix("-", _subtract_operator, 10)
 Evaluator.register_infix("*", _mult_operator, 20)
 Evaluator.register_infix("/", _div_operator, 20)
 Evaluator.register_prefix("-", _negate_operator, 100)
 Evaluator.register_infix("^", _pow_operator, 110, right_assoc=True)
+
 Evaluator.register_postfix("!", _factorial_operator, 120)
-Evaluator.register_infix("d", _dice_operator, 200)
-Evaluator.register_prefix("d", _dice_operator_prefix, 200)
+
+Evaluator.register_infix("C", _choose_operator, 130)
+Evaluator.register_infix("choose", _choose_operator, 130)._spaces = True
+
 Evaluator.register_infix("dl", _dice_drop_low_operator, 190)
 Evaluator.register_infix("dh", _dice_drop_high_operator, 190)
 Evaluator.register_infix("kl", _dice_keep_low_operator, 190)
 Evaluator.register_infix("kh", _dice_keep_high_operator, 190)
+
+Evaluator.register_infix("d", _dice_operator, 200)
+Evaluator.register_prefix("d", _dice_operator_prefix, 200)
 
 if __name__ == "__main__":
     while True:
