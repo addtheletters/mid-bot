@@ -19,9 +19,10 @@ TOKEN = os.getenv("DISCORD_TOKEN")
 def help_notice():
     return f"See `{BOT_SUMMON_PREFIX}{DEFAULT_HELP_KEY}`."
 
+# Wrapper for ProcessPool to allow use with asyncio run_in_executor
 class PebbleExecutor(concurrent.futures.Executor):
-    def __init__(self, pebble_pool, timeout=None):
-        self.pool = pebble_pool
+    def __init__(self, max_workers, timeout=None):
+        self.pool = ProcessPool(max_workers=MAX_COMMAND_WORKERS)
         self.timeout = timeout
 
     def submit(self, fn, *args, **kwargs):
@@ -44,7 +45,7 @@ class MidClient(discord.Client):
     def __init__(self):
         discord.Client.__init__(self)
         self.executor = PebbleExecutor(
-            ProcessPool(max_workers=MAX_COMMAND_WORKERS),
+            MAX_COMMAND_WORKERS,
             COMMAND_TIMEOUT)
 
         self.commands = {}
@@ -89,10 +90,8 @@ class MidClient(discord.Client):
             cmd.keys.append(key)
 
     async def execute_command(self, command_key, msg, intext):
-        #cmd_future = self.pool.schedule(self.commands[command_key].func, args=[intext], timeout=COMMAND_TIMEOUT)
         cmd_future = self.loop.run_in_executor(self.executor, self.commands[command_key].func, intext)
         try:
-            #response = cmd_future.result()
             response = await asyncio.wait_for(cmd_future, timeout=COMMAND_TIMEOUT)
             return response
         except concurrent.futures.TimeoutError:
