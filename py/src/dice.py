@@ -222,33 +222,33 @@ class Evaluator:
         #     'd' operator from showing its breakout.
         # `op_escape` when true will escape markdown around operator
         #     characters. Should be False when formatting for a code block.
-        def describe(self, breakout=False, predrop=False, op_escape=True):
+        def describe(self, breakout=False, op_escape=True, predrop=False):
             if (not predrop) and breakout and self.is_diceroll():
                 dice_breakout = " " + self.detail.breakout()
                 if self._kind == "d":
                     if self.detail.count < 2:
                         dice_breakout = ""
                     dice_count = "" if self.second == None\
-                                    else self.first.describe(breakout)
-                    dice_size = self.first.describe(breakout)\
+                                    else self.first.describe(breakout, op_escape)
+                    dice_size = self.first.describe(breakout, op_escape)\
                                     if self.second == None\
-                                    else self.second.describe(breakout)
+                                    else self.second.describe(breakout, op_escape)
                     return f"[{dice_count}d{dice_size}"+\
                             f"{dice_breakout}={self.value}]"
                 else:
-                    return f"[{self.first.describe(breakout, predrop=True)}"+\
-                            f"{self._kind}{self.second.describe(breakout)}"+\
+                    return f"[{self.first.describe(breakout, op_escape, predrop=True)}"+\
+                            f"{self._kind}{self.second.describe(breakout, op_escape)}"+\
                             f"{dice_breakout}={self.value}]"
             if self._kind == "(": # parenthesis group
-                return "(" + self.first.describe(breakout) + ")"
+                return "(" + self.first.describe(breakout, op_escape) + ")"
             if self.first != None and self.second != None: # infix
                 op = self._kind
                 if op_escape:
                     op = escape(op)
-                return f"{self.first.describe(breakout)}{op}"+\
-                        f"{self.second.describe(breakout)}"
+                return f"{self.first.describe(breakout, op_escape)}{op}"+\
+                        f"{self.second.describe(breakout, op_escape)}"
             if self.first != None: # prefix
-                return f"{self._kind}{self.first.describe(breakout)}"
+                return f"{self._kind}{self.first.describe(breakout, op_escape)}"
             else:
                 return f"{self}"
 
@@ -347,9 +347,9 @@ def roll(intext):
 def format_roll_results(results):
     out = ""
     for row in results:
-        out += f"`{row.describe(False, op_escape=True)}`"+\
-                f"=> __**{row.value}**__"+\
-                f"  |  {row.describe(True)}"
+        out += f"`{row.describe(breakout=False, op_escape=False)}`"+\
+                f"=> **{row.value}**"+\
+                f"  |  {row.describe(breakout=True)}"
         out += "\n"
     return out
 
