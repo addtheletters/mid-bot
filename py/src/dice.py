@@ -119,7 +119,11 @@ def dice_drop(dice, n, high=False, keep=False):
         raise SyntaxError(f"Failed to drop dice (not a dice roll?)")
     n = force_integral(n, "dice to drop")
     if keep:
+        if n < 0:
+            raise ValueError(f"Can't keep negative dice ({n})")
         n = dice.count - n
+        if n < 0: # allow keeping more dice than are rolled (drop none)
+            n = 0
     if n < 0:
         raise ValueError(f"Can't drop negative dice ({n})")
     if n == 0:
