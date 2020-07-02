@@ -125,7 +125,7 @@ def dice_roll(count, size):
 # `keep` option means keeping `n` dice and dropping the rest.
 def dice_drop(dice, n, high=False, keep=False):
     if not isinstance(dice, DiceResult):
-        raise SyntaxError(f"Failed to drop dice (not a dice roll?)")
+        raise SyntaxError(f"Can't drop/keep (operand not a dice roll)")
     n = force_integral(n, "dice to drop")
     if keep:
         if n < 0:
@@ -252,7 +252,8 @@ class Evaluator:
                 op = self._kind
                 if op_escape:
                     op = escape(op)
-                return f"{self.first.describe(breakout, op_escape, ex_ar)}{op}"+\
+                ext_predrop = predrop if self.is_dropkeep() else False
+                return f"{self.first.describe(breakout, op_escape, ex_ar, predrop=ext_predrop)}{op}"+\
                         f"{self.second.describe(breakout, op_escape, ex_ar)}"
             if self.first != None: # prefix
                 return f"{self._kind}{self.first.describe(breakout, op_escape, ex_ar)}"
@@ -267,7 +268,10 @@ class Evaluator:
             return "<" + " ".join(out) + ">"
 
         def is_diceroll(self):
-            return self._kind in ("d", "dl", "dh", "kl", "kh")
+            return self._kind == "d" or self.is_dropkeep()
+
+        def is_dropkeep(self):
+            return self._kind in ("dl", "dh", "kl", "kh")
 
         # Is this node dice, or does any node in this subtree have dice?
         def contains_diceroll(self):
