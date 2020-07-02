@@ -122,28 +122,25 @@ That's all.
 f"""
 __**roll**__
 Rolls some dice and does some math.
-This handles a basic subset of standard dice notation (https://en.wikipedia.org/wiki/Dice_notation).
-Here's what it can do.
+This handles a subset of standard dice notation (https://en.wikipedia.org/wiki/Dice_notation).
+Here's what it can do, roughly in order of operator precedence.
 
+__Dice roll__ `d`
+    Use as `<N>d<S>`, which rolls `<N>` dice of size `<S>`, adding together the results.
+    `<N>` and `<S>` must be positive integers. `<N>` omitted will roll 1 dice.
+    Example: `{BOT_SUMMON_PREFIX}roll 8d6`
+__Keep/Drop__ `kh` (keep high), `kl` (keep low), `dh` (drop high), `dl` (drop low)
+    Use as `<diceroll>kh<N>` to keep the `<N>` highest dice from `<diceroll>`.
+    `<diceroll>` must be some rolled dice. `<N>` must be a positive integer.
+    Example: `{BOT_SUMMON_PREFIX}roll 4d6kh3`
+__Combinatorics__ `C` or `choose`
+    Use as `<n> C <k>` or `<n> choose <k>`. (https://en.wikipedia.org/wiki/Combination).
 __Arithmetic__ `+ - * / ^ !`
     Use as you'd expect. `1+4`, `2*8`, `4^3^2`...
     `^` is power, not xor.
     `!` is factorial. `5! = 1 * 2 * 3 * 4 * 5`
         Double factorial doesn't exist: `5!!` is treated as `(5!)!`.
-        Likewise, dice exploding doesn't exist yet, so `!` following a dice roll will be interpreted as the total's factorial.
-__Dice roll__ `d`
-    Use as `<N>d<S>`, which rolls `<N>` dice of size `<S>`, adding together the results.
-    `<N>` and `<S>` must resolve to positive integers.
-    `<N>` can be omitted; this will roll 1 dice.
-    Example: `{BOT_SUMMON_PREFIX}roll 8d6`
-__Keep/Drop__ `kh` (keep high), `kl` (keep low), `dh` (drop high), `dl` (drop low)
-    Use as `<diceroll>kh<N>` to keep the `<N>` highest dice from `<diceroll>`.
-    `<diceroll>` must be some rolled dice (use of the `d` operator).
-    `<N>` must resolve to a positive integer.
-    Example: `{BOT_SUMMON_PREFIX}roll 4d6kh3`
-__Combinatorics__ `C` or `choose`
-    Use as `<n>C<k>` or `<n> choose <k>`.
-    Calculates the binomial coefficient (https://en.wikipedia.org/wiki/Combination).
+        Likewise, dice exploding doesn't exist yet.
 __Parentheses__ `( )` enforce associativity and order of operations.
     Example: `{BOT_SUMMON_PREFIX}roll 3d((2+23)/5)`
 __Semicolons__ `;` act as dividers, allowing several independent rolls from one message.

@@ -472,6 +472,8 @@ def _choose_operator(node, x, y):
         node.value = 0
     else:
         node.value = factorial(n) / (factorial(k) * factorial(n - k))
+        if node.value.is_integer():
+            node.value = int(node.value)
 
 def _number_nud(self, ev):
     return self
@@ -498,7 +500,7 @@ Evaluator.register_infix("^", _pow_operator, 110, right_assoc=True)
 
 Evaluator.register_postfix("!", _factorial_operator, 120)
 
-Evaluator.register_infix("C", _choose_operator, 130)
+Evaluator.register_infix("C", _choose_operator, 130)._spaces = True
 Evaluator.register_infix("choose", _choose_operator, 130)._spaces = True
 
 Evaluator.register_infix("dl", _dice_drop_low_operator, 190)
