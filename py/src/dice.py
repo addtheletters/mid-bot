@@ -178,7 +178,8 @@ class Evaluator:
         try:
             self.token_current = next(self.token_iter)
         except StopIteration as err:
-            raise StopIteration(f"Expected further input. Missing operands?")
+            raise StopIteration(
+                f"Expected further input. Missing operands?") from err
         return self.token_current
 
     def _current(self):
@@ -191,19 +192,20 @@ class Evaluator:
 
     # Syntax tree base class
     class _Symbol:
-        # token type
+        # token type. 
         _kind = None
-        # literal value or computation result
-        value = None
-        # detailed info on operator computation such as dice resolution
-        detail = None
-
-        # parse tree links
-        first = None
-        second = None
-
         # operator binding power, 0 for literals.
         bp = 0
+
+        def __init__(self):
+            # literal value or computation result
+            self.value = None
+            # detailed info on operator computation such as dice resolution
+            self.detail = None
+
+            # parse tree links
+            self.first = None
+            self.second = None
 
         # Null denotation: value for literals, prefix behavior for operators.
         def as_prefix(self, evaluator):
