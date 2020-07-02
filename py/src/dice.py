@@ -3,7 +3,7 @@
 
 import collections, re
 from random import randint
-from utils import escape
+from utils import escape, codeblock
 
 ProtoToken = collections.namedtuple("ProtoToken", ["type", "value"])
 
@@ -34,7 +34,7 @@ def tokenize(intext):
         elif kind == "SKIP":
             continue
         elif kind == "MISMATCH":
-            raise RuntimeError(f"Couldn't interpret `{value}` from: {intext}")
+            raise RuntimeError(f"Couldn't interpret <{value}> from: {intext}")
         
         tokens.append(ProtoToken(kind, value))
     return tokens
@@ -347,7 +347,7 @@ def roll(intext):
 def format_roll_results(results):
     out = ""
     for row in results:
-        out += f"`{row.describe(breakout=False, op_escape=False)}`"+\
+        out += codeblock(row.describe(breakout=False, op_escape=False))+\
                 f"=> **{row.value}**"+\
                 f"  |  {row.describe(breakout=True)}"
         out += "\n"

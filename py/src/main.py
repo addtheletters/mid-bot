@@ -29,7 +29,7 @@ class PebbleExecutor(concurrent.futures.Executor):
         return self.pool.schedule(fn, args=args, timeout=self.timeout)
 
     def map(self, func, *iterables, timeout=None, chunksize=1):
-        return NotImplementedError("This wrapper does not yet support `map`.")
+        return NotImplementedError("This wrapper does not support `map`.")
 
     def shutdown(self, wait=True):
         if wait:
@@ -84,7 +84,7 @@ class MidClient(discord.Client):
 
     def register_command(self, key, cmd):
         if key in self.commands.keys():
-            log.warning(f"Key {key} is overloaded. Fix the command configuration.")
+            log.warning(f"Key {codeblock(key)} is overloaded. Fix the command configuration.")
         self.commands[key] = cmd
         if key not in cmd.keys:
             cmd.keys.append(key)
@@ -133,7 +133,8 @@ class MidClient(discord.Client):
                 if "hello" in msg.content.lower() or "hi" in msg.content.lower():
                     await reply(msg, f"Hi 🙂")
                     return
-                await reply(msg, f"Summon me using: `{BOT_SUMMON_PREFIX}<your request here>`")
+                summon_text = BOT_SUMMON_PREFIX+"<command>"
+                await reply(msg, f"Summon me using: {codeblock(summon_text)}")
                 return
 
             intext = msg.content[len(BOT_SUMMON_PREFIX):].strip()
@@ -151,9 +152,9 @@ class MidClient(discord.Client):
                         await reply(msg, command_response)
                     return
                 except concurrent.futures.TimeoutError:
-                    await reply(msg, f"Command execution timed out for `{command} {intext}`.")
+                    await reply(msg, f"Command execution timed out for {codeblock(command+intext)}.")
             else:
-                await reply(msg, f"Unrecognized command `{command}`. {help_notice()}")
+                await reply(msg, f"Unrecognized command {codeblock(command)}. {help_notice()}")
 
 if __name__ == "__main__":
     client = MidClient()

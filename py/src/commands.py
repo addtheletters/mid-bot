@@ -2,7 +2,7 @@
 from collections import namedtuple
 from config import *
 from random import randint
-from utils import escape
+from utils import escape, codeblock
 import asyncio
 import discord
 import dice
@@ -11,17 +11,16 @@ Command = namedtuple("Command", ["keys", "func", "info", "detailed"])
 
 def command_help(intext):
     if len(intext) < 1: # show command list
-        help_info = "```Available commands:\n"
+        help_info = "Available commands:\n"
         for cmd in COMMAND_CONFIG:
             help_info += f"{cmd.keys}: {cmd.info}\n"
-        help_info += "```"
-        return help_info
+        return codeblock(help_info, big=True)
     else: # fetch detailed command help
         key = intext.split(" ")[0]
         for cmd in COMMAND_CONFIG:
             if key in cmd.keys:
                 return cmd.detailed    
-        return f"No help available for unknown command `{key}`."
+        return f"No help available for unknown command {codeblock(key)}."
 
 def command_echo(intext):
     if len(intext) == 0:
@@ -38,7 +37,7 @@ def command_roll(intext):
         return dice.format_roll_results(roll_result)
     except Exception as err:
         print(f"Roll error: {err}")
-        return f"Input not accepted.\n```{err}```"
+        return f"Input not accepted.\n{codeblock(err, big=True)}"
 
 # Add commands here. Commands need at least one key and a function to perform.
 # A command function can return a string which will be sent as a response.
