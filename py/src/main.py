@@ -7,6 +7,7 @@ from multiprocessing.managers import SyncManager
 from pebble import ProcessPool
 from utils import reply, log_message
 import asyncio
+import cards
 import concurrent.futures
 import discord
 import logging
@@ -44,7 +45,19 @@ class PebbleExecutor(concurrent.futures.Executor):
         log.info("Workers joined.")
 
 class ClientData:
-    pass
+    def __init__(self):
+        self.card_deck = cards.shuffle(cards.build_deck_52())
+        self.card_logs = []
+    def get_card_deck(self):
+        return self.card_deck
+    def set_card_deck(self, deck):
+        self.card_deck = deck
+    def get_card_logs(self):
+        return self.card_logs
+    def clear_card_logs(self):
+        self.card_logs = []
+    def add_card_log(self, message):
+        self.card_logs.append(message)
 
 class DataManager(SyncManager):
     def __init__(self):
@@ -119,7 +132,7 @@ class MidClient(discord.Client):
     async def execute_command(self, command_key, msg, intext):
         cmd_future = self.loop.run_in_executor(self.executor,
                             self.commands[command_key].func,
-                            intext, self.data)
+                            intext, self.data, f"{msg.author}")
         try:
             response = await asyncio.wait_for(cmd_future,
                                               timeout=COMMAND_TIMEOUT)
