@@ -152,7 +152,7 @@ __draw__ `{BOT_SUMMON_PREFIX}holdem draw <count>`
 __reset__ `{BOT_SUMMON_PREFIX}holdem reset`
     Reset the deck.
 __shuffle__ `{BOT_SUMMON_PREFIX}holdem shuffle`
-    Shuffle the current cards in the deck.
+    Shuffle the remaining cards in the deck.
 __inspect__ `{BOT_SUMMON_PREFIX}holdem inspect`
     Check the number of cards remaining in the deck, and peek at the top and bottom cards.
 __history__ `{BOT_SUMMON_PREFIX}holdem history <count>`
