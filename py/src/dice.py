@@ -2,14 +2,21 @@
 # Parser and evaluator for dice roll inputs.
 
 import collections, re
+from math import factorial
 from random import randint
 from utils import escape, codeblock
 
 ProtoToken = collections.namedtuple("ProtoToken", ["type", "value"])
 
+KEYWORDS = [
+    "C", "repeat", "sqrt",
+]
+KEYWORD_PATTERN = '|'.join(KEYWORDS)
 TOKEN_SPEC = [
     ("NUMBER",   r"\d+(\.\d*)?"),  # Integer or decimal number
-    ("OP",       r"[dk][hl]|[+\-*/^d()]"),  # Operators
+    ("KEYWORD",  KEYWORD_PATTERN), # Keywords
+    ("DICE",     r"[dk][hl]|[d]"), # Diceroll operators
+    ("OP",       r"[+\-*/^()!]"),  # Generic operators
     ("END",      r"[;\n]"),        # Line end / break characters
     ("SKIP",     r"[ \t]+"),       # Skip over spaces and tabs
     ("MISMATCH", r"."),            # Any other character
@@ -45,13 +52,13 @@ def symbolize(symbol_table, tokens):
     current_roll = []
     for pretoken in tokens:
         symbol_id = pretoken.type
-        if pretoken.type == "OP":
+        if pretoken.type in ("OP", "DICE", "KEYWORD"):
             symbol_id = pretoken.value
         try: # look up symbol type
             symbol = symbol_table[symbol_id]
         except KeyError:
             raise SyntaxError(
-                f"Failed to find symbol type for token {pretoken}")
+                f"Failed to find symbol type for {pretoken}")
 
         token = symbol()
         if pretoken.type == "NUMBER":
@@ -196,6 +203,8 @@ class Evaluator:
         _kind = None
         # operator binding power, 0 for literals.
         bp = 0
+        # assume prefix for display purposes
+        _postfix = False
 
         def __init__(self):
             # literal value or computation result
@@ -255,8 +264,11 @@ class Evaluator:
                 ext_predrop = predrop if self.is_dropkeep() else False
                 return f"{self.first.describe(breakout, op_escape, ex_ar, predrop=ext_predrop)}{op}"+\
                         f"{self.second.describe(breakout, op_escape, ex_ar)}"
-            if self.first != None: # prefix
-                return f"{self._kind}{self.first.describe(breakout, op_escape, ex_ar)}"
+            if self.first != None: # prefix or postfix, one child
+                child_describe = self.first.describe(breakout, op_escape, ex_ar)
+                if self._postfix:
+                    return f"{child_describe}{self._kind}"
+                return f"{self._kind}{child_describe}"
             else:
                 return f"{self}"
 
@@ -336,6 +348,21 @@ class Evaluator:
         s.as_infix = _as_infix
         return s
 
+    @staticmethod
+    def register_postfix(kind, func, bind_power):
+        # override as_infix so postfix operators are caught by lookahead
+        # as infix operators that rely solely on existing left expression
+        # and don't call expr
+        def _as_postfix(self, evaluator, left):
+            self.first = left
+            self.second = None
+            func(self, self.first)
+            return self
+        s = Evaluator.register_symbol(kind, bind_power)
+        s.as_infix = _as_postfix
+        s._postfix = True
+        return s
+
     # Build parse tree(s) from symbols and compute results.
     # A break token results in several trees.
     def evaluate(self):
@@ -408,6 +435,9 @@ def _div_operator(node, x, y):
 def _pow_operator(node, x, y):
     node.value = x.value ** y.value
 
+def _factorial_operator(node, x):
+    node.value = factorial(x.value)
+
 def _number_nud(self, ev):
     return self
 
@@ -429,6 +459,7 @@ Evaluator.register_infix("*", _mult_operator, 20)
 Evaluator.register_infix("/", _div_operator, 20)
 Evaluator.register_prefix("-", _negate_operator, 100)
 Evaluator.register_infix("^", _pow_operator, 110, right_assoc=True)
+Evaluator.register_postfix("!", _factorial_operator, 120)
 Evaluator.register_infix("d", _dice_operator, 200)
 Evaluator.register_prefix("d", _dice_operator_prefix, 200)
 Evaluator.register_infix("dl", _dice_drop_low_operator, 190)

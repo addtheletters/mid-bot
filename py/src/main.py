@@ -32,7 +32,7 @@ class PebbleExecutor(concurrent.futures.Executor):
         return self.pool.schedule(fn, args=args, timeout=self.timeout)
 
     def map(self, func, *iterables, timeout=None, chunksize=1):
-        return NotImplementedError("This wrapper does not support `map`.")
+        raise NotImplementedError("This wrapper does not support `map`.")
 
     def shutdown(self, wait=True):
         if wait:
