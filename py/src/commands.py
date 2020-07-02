@@ -81,7 +81,11 @@ def command_holdem(intext, *args):
         count = 1
         if subargs > 1:
             count = int(intext[1])
-        ret = '\n'.join(data.get_card_logs()[-count:])
+        history = data.get_card_logs()
+        numbered = [f"{i+1}: {history[i]}" for i in range(len(history))][-count:]
+        ret = '\n'.join(numbered)
+        if len(numbered) < count:
+            ret = "> start of history.\n" + ret
     else:
         return f"Unknown subcommand {codeblock(subcommand)}. {sub_help_notice('holdem')}"
 
