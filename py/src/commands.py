@@ -135,12 +135,13 @@ __Keep/Drop__ `kh` (keep high), `kl` (keep low), `dh` (drop high), `dl` (drop lo
     Example: `{BOT_SUMMON_PREFIX}roll 4d6kh3`
 __Combinatorics__ `C` or `choose`
     Use as `<n> C <k>` or `<n> choose <k>`. (https://en.wikipedia.org/wiki/Combination).
-__Arithmetic__ `+ - * / ^ !`
+__Arithmetic__ `+ - * / % ^ ! sqrt()`
     Use as you'd expect. `1+4`, `2*8`, `4^3^2`...
-    `^` is power, not xor.
+    `%` is remainder. `^` is power, not xor.
     `!` is factorial. `5! = 1 * 2 * 3 * 4 * 5`
         Double factorial doesn't exist: `5!!` is treated as `(5!)!`.
         Likewise, dice exploding doesn't exist yet.
+    `sqrt(<x>)` tries to get the square root of `<x>`. Parentheses are required.
 __Parentheses__ `( )` enforce associativity and order of operations.
     Example: `{BOT_SUMMON_PREFIX}roll 3d((2+23)/5)`
 __Semicolons__ `;` act as dividers, allowing several independent rolls from one message.

@@ -2,7 +2,7 @@
 # Parser and evaluator for dice roll inputs.
 
 import collections, re
-from math import factorial
+from math import factorial, sqrt
 from random import randint
 from utils import escape, codeblock
 
@@ -16,7 +16,7 @@ TOKEN_SPEC = [
     ("NUMBER",   r"\d+(\.\d*)?"),  # Integer or decimal number
     ("KEYWORD",  KEYWORD_PATTERN), # Keywords
     ("DICE",     r"[dk][hl]|[d]"), # Diceroll operators
-    ("OP",       r"[+\-*/^()!]"),  # Generic operators
+    ("OP",       r"[+\-*/ %^()!]"),# Generic operators
     ("END",      r"[;\n]"),        # Line end / break characters
     ("SKIP",     r"[ \t]+"),       # Skip over spaces and tabs
     ("MISMATCH", r"."),            # Any other character
@@ -271,12 +271,15 @@ class Evaluator:
 
             if self._kind == "(": # parenthesis group
                 inner = describe_first
-                if inner[len(inner)-1] != ")":
+                if inner[len(inner)-1] != ")" and inner[0] != "(":
                     inner = "(" + inner + ")"
                 return inner
 
             if self._function_like:
-                return f"{self._kind}({self.describe_first},{spacer}{self.describe_second})"
+                close_function = ")"
+                if len(describe_second) > 0:
+                    close_function = f",{spacer}{describe_second})"
+                return f"{self._kind}({describe_first}" + close_function
 
             if self.first != None and self.second != None: # infix
                 op = self._kind
@@ -388,6 +391,23 @@ class Evaluator:
         s._postfix = True
         return s
 
+    @staticmethod
+    def register_function_single(kind, func, bind_power):
+        # One-arg function.
+        # basically a prefix operator, but requires parentheses like a
+        # function call
+        def _as_function(self, evaluator):
+            evaluator.advance("(")
+            self.first = evaluator.expr(bind_power)
+            self.second = None
+            evaluator.advance(")")
+            func(self, self.first)
+            return self
+        s = Evaluator.register_symbol(kind)
+        s.as_prefix = _as_function
+        s._function_like = True
+        return s
+
     # Build parse tree(s) from symbols and compute results.
     # A break token results in several trees.
     def evaluate(self):
@@ -475,6 +495,12 @@ def _choose_operator(node, x, y):
         if node.value.is_integer():
             node.value = int(node.value)
 
+def _sqrt_operator(node, x):
+    node.value = sqrt(x.value)
+
+def _remainder_operator(node, x, y):
+    node.value = x.value % y.value
+
 def _number_nud(self, ev):
     return self
 
@@ -490,11 +516,13 @@ Evaluator.register_symbol("NUMBER").as_prefix = _number_nud
 Evaluator.register_symbol("END")
 Evaluator.register_symbol("(").as_prefix = _left_paren_nud
 Evaluator.register_symbol(")")
+Evaluator.register_function_single("sqrt", _sqrt_operator, 0)
 
 Evaluator.register_infix("+", _add_operator, 10)
 Evaluator.register_infix("-", _subtract_operator, 10)
 Evaluator.register_infix("*", _mult_operator, 20)
 Evaluator.register_infix("/", _div_operator, 20)
+Evaluator.register_infix("%", _remainder_operator, 20)
 Evaluator.register_prefix("-", _negate_operator, 100)
 Evaluator.register_infix("^", _pow_operator, 110, right_assoc=True)
 
