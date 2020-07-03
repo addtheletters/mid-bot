@@ -2,14 +2,22 @@
 # Parser and evaluator for dice roll inputs.
 
 import collections, re
+from math import factorial, sqrt
 from random import randint
 from utils import escape, codeblock
 
 ProtoToken = collections.namedtuple("ProtoToken", ["type", "value"])
 
+KEYWORDS = [
+    "C", "choose", "repeat", "sqrt",
+]
+KEYWORD_PATTERN = '|'.join(KEYWORDS)
 TOKEN_SPEC = [
     ("NUMBER",   r"\d+(\.\d*)?"),  # Integer or decimal number
-    ("OP",       r"[dk][hl]|[+\-*/^d()]"),  # Operators
+    ("KEYWORD",  KEYWORD_PATTERN), # Keywords
+    ("DICE",     r"[dk][hl]|[d]"), # Diceroll operators
+    ("OP",       r"[+\-*/%^()!]"), # Generic operators
+    ("SEP",      r"[,]"),          # Separators like commas
     ("END",      r"[;\n]"),        # Line end / break characters
     ("SKIP",     r"[ \t]+"),       # Skip over spaces and tabs
     ("MISMATCH", r"."),            # Any other character
@@ -45,13 +53,13 @@ def symbolize(symbol_table, tokens):
     current_roll = []
     for pretoken in tokens:
         symbol_id = pretoken.type
-        if pretoken.type == "OP":
+        if pretoken.type in ("OP", "DICE", "KEYWORD", "SEP"):
             symbol_id = pretoken.value
         try: # look up symbol type
             symbol = symbol_table[symbol_id]
         except KeyError:
             raise SyntaxError(
-                f"Failed to find symbol type for token {pretoken}")
+                f"Failed to find symbol type for {pretoken}")
 
         token = symbol()
         if pretoken.type == "NUMBER":
@@ -125,7 +133,7 @@ def dice_roll(count, size):
 # `keep` option means keeping `n` dice and dropping the rest.
 def dice_drop(dice, n, high=False, keep=False):
     if not isinstance(dice, DiceResult):
-        raise SyntaxError(f"Failed to drop dice (not a dice roll?)")
+        raise SyntaxError(f"Can't drop/keep (operand not a dice roll)")
     n = force_integral(n, "dice to drop")
     if keep:
         if n < 0:
@@ -163,6 +171,46 @@ def dice_drop(dice, n, high=False, keep=False):
     return DiceResult(
         dice.count, dice.size, total, dice.rolls, dice.negative, dropped)
 
+class FlatExpression(collections.namedtuple("FlatExpression",
+        ["value", "detail", "unevaluated", "breakout"])):
+    def __repr__(self):
+        return self.breakout
+
+class MultiExpression:
+    def __init__(self, contents):
+        self.contents = contents
+
+    def __repr__(self):
+        return f"{len(self.contents)} results"
+
+    def unevaluated(self):
+        if len(self.contents) < 0:
+            return "[empty MultiExpression]"
+
+        all_identical = True
+        first = self.contents[0]
+        for other in self.contents[1:]:
+            if first.unevaluated != other.unevaluated:
+                all_identical = False
+                break
+
+        if all_identical:
+            return f"[{len(self.contents)} repeats of: {first.unevaluated}]"
+
+        out = "["
+        for item in self.contents:
+            out += f"{item.unevaluated}, "
+        out = out[:-2]
+        out += "]"
+        return out
+
+    def breakout(self, nesting=1):
+        out = "[\n"
+        for item in self.contents:
+            out += "    " * nesting
+            out += f"**{item.value}**  |  {item}\n"
+        return out + "]"
+
 # Based on Pratt top-down operator precedence.
 # http://effbot.org/zone/simple-top-down-parsing.htm
 # Relies on a static symbol table for now; not thread-safe. haha python
@@ -170,14 +218,25 @@ class Evaluator:
     SYMBOL_TABLE = {}
 
     def __init__(self, tokens):
-        self.token_iter = iter(tokens)
+        self.token_list = tokens
+        self.iter_pos = -1
         self.token_current = None
         self._next()
 
+    def _jump_to(self, token_pos):
+        try:
+            self.token_current = self.token_list[token_pos]
+            self.iter_pos = token_pos
+        except IndexError as err:
+            raise IndexError(
+                f"Can't iterate from token position {token_pos}") from err
+        return self.token_current
+
     def _next(self):
         try:
-            self.token_current = next(self.token_iter)
-        except StopIteration as err:
+            self.token_current = self.token_list[self.iter_pos + 1]
+            self.iter_pos += 1
+        except (StopIteration, IndexError) as err:
             raise StopIteration(
                 f"Expected further input. Missing operands?") from err
         return self.token_current
@@ -196,6 +255,13 @@ class Evaluator:
         _kind = None
         # operator binding power, 0 for literals.
         bp = 0
+
+        # show operator after child for display purposes
+        _postfix = False
+        # add function-call parens when displaying operator with children
+        _function_like = False
+        # when displaying, insert spaces to separate operator from children
+        _spaces = False
 
         def __init__(self):
             # literal value or computation result
@@ -227,35 +293,67 @@ class Evaluator:
         # `ex_ar` to expand intermediate arithmetic lacking dice rolls.
         def describe(self, breakout=False, op_escape=True,
                      ex_ar=False, predrop=False):
+            if self._kind == "repeat":
+                if not breakout:
+                    return self.detail.unevaluated()
+                return self.detail.breakout()
+
             if (not ex_ar) and (not self.contains_diceroll()):
                 if self.value != None:
                     return f"{self.value}"
+
+            describe_first = self.first.describe(breakout, op_escape, ex_ar)\
+                if self.first != None else ""
+            describe_second = self.second.describe(breakout, op_escape, ex_ar)\
+                if self.second != None else ""
+
             if (not predrop) and breakout and self.is_diceroll():
                 dice_breakout = " " + self.detail.breakout()
                 if self._kind == "d":
                     if self.detail.count < 2:
                         dice_breakout = ""
                     dice_count = "" if self.second == None\
-                                    else self.first.describe(breakout, op_escape, ex_ar)
-                    dice_size = self.first.describe(breakout, op_escape, ex_ar)\
+                                    else describe_first
+                    dice_size = describe_first\
                                     if self.second == None\
-                                    else self.second.describe(breakout, op_escape, ex_ar)
+                                    else describe_second
                     return f"[{dice_count}d{dice_size}"+\
                             f"{dice_breakout}={self.value}]"
                 else:
                     return f"[{self.first.describe(breakout, op_escape, ex_ar, predrop=True)}"+\
-                            f"{self._kind}{self.second.describe(breakout, op_escape, ex_ar)}"+\
+                            f"{self._kind}{describe_second}"+\
                             f"{dice_breakout}={self.value}]"
+            
+            spacer = " " if self._spaces else ""
+
             if self._kind == "(": # parenthesis group
-                return "(" + self.first.describe(breakout, op_escape, ex_ar) + ")"
+                inner = describe_first
+                if inner[len(inner)-1] != ")" and inner[0] != "(":
+                    inner = "(" + inner + ")"
+                return inner
+
+            if self._function_like:
+                close_function = ")"
+                if len(describe_second) > 0:
+                    close_function = f",{spacer}{describe_second})"
+                return f"{self._kind}({describe_first}" + close_function
+
             if self.first != None and self.second != None: # infix
                 op = self._kind
                 if op_escape:
                     op = escape(op)
-                return f"{self.first.describe(breakout, op_escape, ex_ar)}{op}"+\
-                        f"{self.second.describe(breakout, op_escape, ex_ar)}"
-            if self.first != None: # prefix
-                return f"{self._kind}{self.first.describe(breakout, op_escape, ex_ar)}"
+                ext_predrop = predrop if self.is_dropkeep() else False
+                prewrap = f"{self.first.describe(breakout, op_escape, ex_ar, predrop=ext_predrop)}"+\
+                        f"{spacer}{op}{spacer}"+\
+                        f"{describe_second}"
+                if self._kind == "choose" or self._kind == "C":
+                    return "(" + prewrap + ")"
+                return prewrap
+            if self.first != None: # prefix or postfix, one child
+                child_describe = describe_first
+                if self._postfix:
+                    return f"{child_describe}{spacer}{self._kind}"
+                return f"{self._kind}{spacer}{child_describe}"
             else:
                 return f"{self}"
 
@@ -267,7 +365,10 @@ class Evaluator:
             return "<" + " ".join(out) + ">"
 
         def is_diceroll(self):
-            return self._kind in ("d", "dl", "dh", "kl", "kh")
+            return self._kind == "d" or self.is_dropkeep()
+
+        def is_dropkeep(self):
+            return self._kind in ("dl", "dh", "kl", "kh")
 
         # Is this node dice, or does any node in this subtree have dice?
         def contains_diceroll(self):
@@ -282,7 +383,6 @@ class Evaluator:
 
     # Parse and evaluate an expression from symbols. Recursive.
     def expr(self, right_bp=0):
-        # print(f"evaluating starting at {self.token_current}")
         prev = self._current()
         self._next()
         left = prev.as_prefix(self)
@@ -330,6 +430,54 @@ class Evaluator:
             return self
         s = Evaluator.register_symbol(kind, bind_power)
         s.as_infix = _as_infix
+        return s
+
+    @staticmethod
+    def register_postfix(kind, func, bind_power):
+        # override as_infix so postfix operators are caught by lookahead
+        # as infix operators that rely solely on existing left expression
+        # and don't call expr
+        def _as_postfix(self, evaluator, left):
+            self.first = left
+            self.second = None
+            func(self, self.first)
+            return self
+        s = Evaluator.register_symbol(kind, bind_power)
+        s.as_infix = _as_postfix
+        s._postfix = True
+        return s
+
+    @staticmethod
+    def register_function_single(kind, func):
+        # One-arg function.
+        # basically a prefix operator, but requires parentheses like a
+        # function call
+        def _as_function(self, evaluator):
+            evaluator.advance("(")
+            self.first = evaluator.expr()
+            self.second = None
+            evaluator.advance(")")
+            func(self, self.first)
+            return self
+        s = Evaluator.register_symbol(kind)
+        s.as_prefix = _as_function
+        s._function_like = True
+        return s
+
+    @staticmethod
+    def register_function_double(kind, func):
+        # Two-arg function.
+        def _as_function(self, evaluator):
+            evaluator.advance("(")
+            self.first = evaluator.expr()
+            evaluator.advance(",")
+            self.second = evaluator.expr()
+            evaluator.advance(")")
+            func(self, self.first, self.second, evaluator)
+            return self
+        s = Evaluator.register_symbol(kind)
+        s.as_prefix = _as_function
+        s._function_like = True
         return s
 
     # Build parse tree(s) from symbols and compute results.
@@ -404,6 +552,57 @@ def _div_operator(node, x, y):
 def _pow_operator(node, x, y):
     node.value = x.value ** y.value
 
+def _factorial_operator(node, x):
+    node.value = factorial(x.value)
+
+def _choose_operator(node, x, y):
+    n = force_integral(x.value, "choice operand")
+    k = force_integral(y.value, "choice operand")
+    if n < 0 or k < 0:
+        raise ValueError("choose operator must have positive operands")
+    if k > n:
+        node.value = 0
+    else:
+        node.value = factorial(n) / (factorial(k) * factorial(n - k))
+        if node.value.is_integer():
+            node.value = int(node.value)
+
+def _sqrt_operator(node, x):
+    node.value = sqrt(x.value)
+
+def _remainder_operator(node, x, y):
+    node.value = x.value % y.value
+
+def _repeat_function(node, x, y, ev):
+    exit_iter_pos = ev.iter_pos
+    
+    reps = force_integral(y.value, "repetitions")
+    if reps < 0:
+        raise ValueError("Cannot repeat negative times")
+    if reps == 0:
+        node.detail = MultiExpression([])
+        node.value = node.detail
+        return
+
+    flats = [FlatExpression(x.value,
+                            x.detail,
+                            x.describe(ex_ar=True, op_escape=False),
+                            x.describe(breakout=True))]
+    redo_node = x
+    for i in range(reps - 1):
+        ev._jump_to(ev.token_list.index(node)+2) # skip function open paren
+        #print(f"evaluator current {ev.iter_pos}: {ev._current()}")
+        redo_node = ev.expr()
+        flats.append(FlatExpression(redo_node.value,
+                                    redo_node.detail,
+                                    redo_node.describe(ex_ar=True, op_escape=False),
+                                    redo_node.describe(breakout=True)))
+    # jump forward past end of function parentheses
+    ev._jump_to(exit_iter_pos)
+
+    node.detail = MultiExpression(flats)
+    node.value = node.detail
+
 def _number_nud(self, ev):
     return self
 
@@ -419,18 +618,30 @@ Evaluator.register_symbol("NUMBER").as_prefix = _number_nud
 Evaluator.register_symbol("END")
 Evaluator.register_symbol("(").as_prefix = _left_paren_nud
 Evaluator.register_symbol(")")
+Evaluator.register_symbol(",")
+Evaluator.register_function_double("repeat", _repeat_function)
+Evaluator.register_function_single("sqrt", _sqrt_operator)
+
 Evaluator.register_infix("+", _add_operator, 10)
 Evaluator.register_infix("-", _subtract_operator, 10)
 Evaluator.register_infix("*", _mult_operator, 20)
 Evaluator.register_infix("/", _div_operator, 20)
+Evaluator.register_infix("%", _remainder_operator, 20)
 Evaluator.register_prefix("-", _negate_operator, 100)
 Evaluator.register_infix("^", _pow_operator, 110, right_assoc=True)
-Evaluator.register_infix("d", _dice_operator, 200)
-Evaluator.register_prefix("d", _dice_operator_prefix, 200)
+
+Evaluator.register_postfix("!", _factorial_operator, 120)
+
+Evaluator.register_infix("C", _choose_operator, 130)._spaces = True
+Evaluator.register_infix("choose", _choose_operator, 130)._spaces = True
+
 Evaluator.register_infix("dl", _dice_drop_low_operator, 190)
 Evaluator.register_infix("dh", _dice_drop_high_operator, 190)
 Evaluator.register_infix("kl", _dice_keep_low_operator, 190)
 Evaluator.register_infix("kh", _dice_keep_high_operator, 190)
+
+Evaluator.register_infix("d", _dice_operator, 200)
+Evaluator.register_prefix("d", _dice_operator_prefix, 200)
 
 if __name__ == "__main__":
     while True:
