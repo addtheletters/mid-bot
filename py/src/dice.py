@@ -64,7 +64,7 @@ def symbolize(symbol_table, tokens):
 
         token = symbol()
         if pretoken.type == "NUMBER":
-            token.value = pretoken.value
+            token._value = pretoken.value
         current_roll.append(token)
 
         if pretoken.type == "END":
@@ -404,13 +404,20 @@ class Evaluator:
 
         def __init__(self):
             # numerical literal or resolved computation value
-            self.value = None
+            self._value = None
             # detailed info on operator computation such as dice resolution
             self.detail = None
 
             # parse tree links
             self.first = None
             self.second = None
+
+        def get_value(self):
+            if self._value != None:
+                return self._value
+            if self.detail != None:
+                return ExprResult.value(self.detail)
+            return None
 
         # Null denotation: value for literals, prefix behavior for operators.
         def as_prefix(self, evaluator):
@@ -438,8 +445,8 @@ class Evaluator:
                 return ExprResult.description(self.detail)
 
             if (not ex_ar) and (not self.contains_diceroll()):
-                if self.value != None:
-                    return f"{self.value}"
+                if self.get_value() != None:
+                    return f"{self.get_value()}"
 
             describe_first = self.first.describe(breakout, op_escape, ex_ar)\
                 if self.first != None else ""
@@ -457,9 +464,9 @@ class Evaluator:
                                     if self.second == None\
                                     else describe_second
                     return f"[{dice_count}d{dice_size}"+\
-                            f"{dice_breakout}={self.value}]"
+                            f"{dice_breakout}={self.get_value()}]"
                 else:
-                    value_tail = str(self.value) if self.value else ""
+                    value_tail = str(self.get_value()) if self.get_value() else ""
                     return f"[{self.first.describe(breakout, op_escape, ex_ar, predrop=True)}"+\
                             f"{self._kind}{describe_second}"+\
                             f"{dice_breakout}{value_tail}]"
@@ -499,7 +506,7 @@ class Evaluator:
 
         def __repr__(self):
             if self._kind == "NUMBER":
-                return f"{self.value}"
+                return f"{self._value}"
             out = [self._kind, self.first, self.second]
             out = map(str, filter(None, out))
             return "<" + " ".join(out) + ">"
@@ -645,7 +652,7 @@ def roll(intext):
 def format_roll_results(results):
     out = ""
     for row in results:
-        final_value = row.value
+        final_value = row.get_value()
         if final_value == None and row.detail != None:
             final_value = str(row.detail)
         out += codeblock(row.describe(breakout=False,
@@ -657,101 +664,93 @@ def format_roll_results(results):
     return out
 
 def _dice_operator(node, x, y):
-    node.detail = dice_roll(x.value, y.value)
-    node.value = node.detail.get_value()
+    node.detail = dice_roll(x.get_value(), y.get_value())
 
 def _dice_operator_prefix(node, x):
-    node.detail = dice_roll(1, x.value)
-    node.value = node.detail.get_value()
+    node.detail = dice_roll(1, x.get_value())
 
 def _drop_low_operator(node, x, y):
-    node.detail = dice_drop(x.detail, y.value)
-    node.value = node.detail.get_value()
+    node.detail = dice_drop(x.detail, y.get_value())
 
 def _drop_high_operator(node, x, y):
-    node.detail = dice_drop(x.detail, y.value, high=True)
-    node.value = node.detail.get_value()
+    node.detail = dice_drop(x.detail, y.get_value(), high=True)
 
 def _keep_low_operator(node, x, y):
-    node.detail = dice_drop(x.detail, y.value, high=False, keep=True)
-    node.value = node.detail.get_value()
+    node.detail = dice_drop(x.detail, y.get_value(), high=False, keep=True)
 
 def _keep_high_operator(node, x, y):
-    node.detail = dice_drop(x.detail, y.value, high=True, keep=True)
-    node.value = node.detail.get_value()
+    node.detail = dice_drop(x.detail, y.get_value(), high=True, keep=True)
 
 def _add_operator(node, x, y):
-    node.value = x.value+y.value
+    node._value = x.get_value()+y.get_value()
 
 def _subtract_operator(node, x, y):
-    node.value = x.value-y.value
+    node._value = x.get_value()-y.get_value()
 
 def _negate_operator(node, x):
-    node.value = -x.value
+    node._value = -x.get_value()
 
 def _mult_operator(node, x, y):
-    node.value = x.value*y.value
+    node._value = x.get_value()*y.get_value()
 
 def _div_operator(node, x, y):
-    node.value = x.value/y.value
+    node._value = x.get_value()/y.get_value()
 
 def _pow_operator(node, x, y):
-    node.value = x.value ** y.value
+    node._value = x.get_value() ** y.get_value()
 
 def _factorial_operator(node, x):
-    node.value = factorial(x.value)
+    node._value = factorial(x.get_value())
 
 def _choose_operator(node, x, y):
-    n = force_integral(x.value, "choice operand")
-    k = force_integral(y.value, "choice operand")
+    n = force_integral(x.get_value(), "choice operand")
+    k = force_integral(y.get_value(), "choice operand")
     if n < 0 or k < 0:
         raise ValueError("choose operator must have positive operands")
     if k > n:
-        node.value = 0
+        node._value = 0
     else:
-        node.value = factorial(n) / (factorial(k) * factorial(n - k))
-        if node.value.is_integer():
-            node.value = int(node.value)
+        node._value = factorial(n) / (factorial(k) * factorial(n - k))
+        if node._value.is_integer():
+            node._value = int(node._value)
 
 def _sqrt_operator(node, x):
-    node.value = sqrt(x.value)
+    node._value = sqrt(x.get_value())
 
 def _remainder_operator(node, x, y):
-    node.value = x.value % y.value
+    node._value = x.get_value() % y.get_value()
 
 def _repeat_function(node, x, y, ev):
     exit_iter_pos = ev.iter_pos
     
-    reps = force_integral(y.value, "repetitions")
+    reps = force_integral(y.get_value(), "repetitions")
     if reps < 0:
         raise ValueError("Cannot repeat negative times")
     if reps == 0:
         node.detail = MultiExpr([])
-        node.value = node.detail
         return
 
-    flats = [FlatExpr(x.value,
+    flats = [FlatExpr(x.get_value(),
                     x.describe(breakout=True),
                     x.describe(ex_ar=True, op_escape=False))]
     redo_node = x
     for i in range(reps - 1):
         ev._jump_to(ev.token_list.index(node)+2) # skip function open paren
         redo_node = ev.expr()
-        flats.append(FlatExpr(redo_node.value,
+        flats.append(FlatExpr(redo_node.get_value(),
                             redo_node.describe(breakout=True),
                             redo_node.describe(ex_ar=True, op_escape=False)))
     # jump forward past end of function parentheses
     ev._jump_to(exit_iter_pos)
 
     node.detail = MultiExpr(flats)
-    node.value = node.detail
 
 def _number_nud(self, ev):
     return self
 
 def _left_paren_nud(self, ev):
     self.first = ev.expr()
-    self.value = self.first.value
+    self._value = self.first.get_value()
     self.detail = self.first.detail
     ev.advance(expected=")")
     return self
