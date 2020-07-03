@@ -130,9 +130,9 @@ __Dice roll__ `d`
     `<N>` and `<S>` must be positive integers. `<N>` omitted will roll 1 dice.
     Example: `{BOT_SUMMON_PREFIX}roll 8d6`
 __Keep/Drop__ `kh` (keep high), `kl` (keep low), `dh` (drop high), `dl` (drop low)
-    Use as `<diceroll>kh<N>` to keep the `<N>` highest dice from `<diceroll>`.
-    `<diceroll>` must be some rolled dice. `<N>` must be a positive integer.
-    Example: `{BOT_SUMMON_PREFIX}roll 4d6kh3`
+    Use as `<values>kh<N>` to keep the `<N>` highest value from `<diceroll>`.
+    `<values>` must be a collection of values, like rolled dice. `<N>` must be a positive integer.
+    Example: `{BOT_SUMMON_PREFIX}roll 4d6kh3` or `{BOT_SUMMON_PREFIX}roll repeat(3d6, 5)dl2`
 __Combinatorics__ `C` or `choose`
     Use as `<n> C <k>` or `<n> choose <k>`. (https://en.wikipedia.org/wiki/Combination).
 __Arithmetic__ `+ - * / % ^ ! sqrt()`

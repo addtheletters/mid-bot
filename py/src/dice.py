@@ -271,7 +271,9 @@ class CollectedValues(ExprResult):
             return 0
         return self.aggregate(func)[-1]
 
-class MultiExpression(CollectedValues):
+# Represents several expressions' results collected together by one operator,
+# such as `repeat()`.
+class MultiExpr(CollectedValues):
     def __init__(self, contents=[], copy_source=None):
         if copy_source:
             super().__init__(
@@ -285,12 +287,12 @@ class MultiExpression(CollectedValues):
         return f"{self.get_remaining_count()} results"
 
     def copy(self):
-        return MultiExpression(copy_source=self)
+        return MultiExpr(copy_source=self)
 
     def get_value(self):
         return None
 
-    def get_description(self, joiner="\n\t"):
+    def get_description(self, joiner="\n"):
         out = "[\n"
         out += joiner.join(
             [self.format_item(f"**{ExprResult.value(self.items[i])}**  |  {ExprResult.description(self.items[i])}", i)
@@ -299,7 +301,7 @@ class MultiExpression(CollectedValues):
 
     def get_unevaluated(self):
         if len(self.get_all_items()) < 0:
-            return "[empty MultiExpression]"
+            return "[empty MultiExpr]"
 
         all_identical = True
         first = self.items[0]
@@ -724,7 +726,7 @@ def _repeat_function(node, x, y, ev):
     if reps < 0:
         raise ValueError("Cannot repeat negative times")
     if reps == 0:
-        node.detail = MultiExpression([])
+        node.detail = MultiExpr([])
         node.value = node.detail
         return
 
@@ -741,7 +743,7 @@ def _repeat_function(node, x, y, ev):
     # jump forward past end of function parentheses
     ev._jump_to(exit_iter_pos)
 
-    node.detail = MultiExpression(flats)
+    node.detail = MultiExpr(flats)
     node.value = node.detail
 
 def _number_nud(self, ev):
