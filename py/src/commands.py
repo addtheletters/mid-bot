@@ -141,7 +141,9 @@ __Arithmetic__ `+ - * / % ^ ! sqrt()`
     `!` is factorial. `5! = 1 * 2 * 3 * 4 * 5`
         Double factorial doesn't exist: `5!!` is treated as `(5!)!`.
         Likewise, dice exploding doesn't exist yet.
-    `sqrt(<x>)` tries to get the square root of `<x>`. Parentheses are required.
+    `sqrt(<x>)` tries to get the square root of `<x>`.
+__Repeat__ `repeat()`
+    `repeat(<expression>, <n>)` to roll `<expression>`, `<n>` times.
 __Parentheses__ `( )` enforce associativity and order of operations.
     Example: `{BOT_SUMMON_PREFIX}roll 3d((2+23)/5)`
 __Semicolons__ `;` act as dividers, allowing several independent rolls from one message.
