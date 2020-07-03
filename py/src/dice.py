@@ -16,7 +16,8 @@ TOKEN_SPEC = [
     ("NUMBER",   r"\d+(\.\d*)?"),  # Integer or decimal number
     ("KEYWORD",  KEYWORD_PATTERN), # Keywords
     ("DICE",     r"[dk][hl]|[d]"), # Diceroll operators
-    ("OP",       r"[+\-*/ %^()!]"),# Generic operators
+    ("OP",       r"[+\-*/%^()!]"), # Generic operators
+    ("SEP",      r"[,]"),          # Separators like commas
     ("END",      r"[;\n]"),        # Line end / break characters
     ("SKIP",     r"[ \t]+"),       # Skip over spaces and tabs
     ("MISMATCH", r"."),            # Any other character
@@ -52,7 +53,7 @@ def symbolize(symbol_table, tokens):
     current_roll = []
     for pretoken in tokens:
         symbol_id = pretoken.type
-        if pretoken.type in ("OP", "DICE", "KEYWORD"):
+        if pretoken.type in ("OP", "DICE", "KEYWORD", "SEP"):
             symbol_id = pretoken.value
         try: # look up symbol type
             symbol = symbol_table[symbol_id]
@@ -170,6 +171,46 @@ def dice_drop(dice, n, high=False, keep=False):
     return DiceResult(
         dice.count, dice.size, total, dice.rolls, dice.negative, dropped)
 
+class FlatExpression(collections.namedtuple("FlatExpression",
+        ["value", "detail", "unevaluated", "breakout"])):
+    def __repr__(self):
+        return self.breakout
+
+class MultiExpression:
+    def __init__(self, contents):
+        self.contents = contents
+
+    def __repr__(self):
+        return f"{len(self.contents)} results"
+
+    def unevaluated(self):
+        if len(self.contents) < 0:
+            return "[empty MultiExpression]"
+
+        all_identical = True
+        first = self.contents[0]
+        for other in self.contents[1:]:
+            if first.unevaluated != other.unevaluated:
+                all_identical = False
+                break
+
+        if all_identical:
+            return f"[{len(self.contents)} repeats of: {first.unevaluated}]"
+
+        out = "["
+        for item in self.contents:
+            out += f"{item.unevaluated}, "
+        out = out[:-2]
+        out += "]"
+        return out
+
+    def breakout(self, nesting=1):
+        out = "[\n"
+        for item in self.contents:
+            out += "    " * nesting
+            out += f"**{item.value}**  |  {item}\n"
+        return out + "]"
+
 # Based on Pratt top-down operator precedence.
 # http://effbot.org/zone/simple-top-down-parsing.htm
 # Relies on a static symbol table for now; not thread-safe. haha python
@@ -177,14 +218,25 @@ class Evaluator:
     SYMBOL_TABLE = {}
 
     def __init__(self, tokens):
-        self.token_iter = iter(tokens)
+        self.token_list = tokens
+        self.iter_pos = -1
         self.token_current = None
         self._next()
 
+    def _jump_to(self, token_pos):
+        try:
+            self.token_current = self.token_list[token_pos]
+            self.iter_pos = token_pos
+        except IndexError as err:
+            raise IndexError(
+                f"Can't iterate from token position {token_pos}") from err
+        return self.token_current
+
     def _next(self):
         try:
-            self.token_current = next(self.token_iter)
-        except StopIteration as err:
+            self.token_current = self.token_list[self.iter_pos + 1]
+            self.iter_pos += 1
+        except (StopIteration, IndexError) as err:
             raise StopIteration(
                 f"Expected further input. Missing operands?") from err
         return self.token_current
@@ -241,6 +293,11 @@ class Evaluator:
         # `ex_ar` to expand intermediate arithmetic lacking dice rolls.
         def describe(self, breakout=False, op_escape=True,
                      ex_ar=False, predrop=False):
+            if self._kind == "repeat":
+                if not breakout:
+                    return self.detail.unevaluated()
+                return self.detail.breakout()
+
             if (not ex_ar) and (not self.contains_diceroll()):
                 if self.value != None:
                     return f"{self.value}"
@@ -326,7 +383,6 @@ class Evaluator:
 
     # Parse and evaluate an expression from symbols. Recursive.
     def expr(self, right_bp=0):
-        # print(f"evaluating starting at {self.token_current}")
         prev = self._current()
         self._next()
         left = prev.as_prefix(self)
@@ -392,16 +448,32 @@ class Evaluator:
         return s
 
     @staticmethod
-    def register_function_single(kind, func, bind_power):
+    def register_function_single(kind, func):
         # One-arg function.
         # basically a prefix operator, but requires parentheses like a
         # function call
         def _as_function(self, evaluator):
             evaluator.advance("(")
-            self.first = evaluator.expr(bind_power)
+            self.first = evaluator.expr()
             self.second = None
             evaluator.advance(")")
             func(self, self.first)
+            return self
+        s = Evaluator.register_symbol(kind)
+        s.as_prefix = _as_function
+        s._function_like = True
+        return s
+
+    @staticmethod
+    def register_function_double(kind, func):
+        # Two-arg function.
+        def _as_function(self, evaluator):
+            evaluator.advance("(")
+            self.first = evaluator.expr()
+            evaluator.advance(",")
+            self.second = evaluator.expr()
+            evaluator.advance(")")
+            func(self, self.first, self.second, evaluator)
             return self
         s = Evaluator.register_symbol(kind)
         s.as_prefix = _as_function
@@ -501,6 +573,36 @@ def _sqrt_operator(node, x):
 def _remainder_operator(node, x, y):
     node.value = x.value % y.value
 
+def _repeat_function(node, x, y, ev):
+    exit_iter_pos = ev.iter_pos
+    
+    reps = force_integral(y.value, "repetitions")
+    if reps < 0:
+        raise ValueError("Cannot repeat negative times")
+    if reps == 0:
+        node.detail = MultiExpression([])
+        node.value = node.detail
+        return
+
+    flats = [FlatExpression(x.value,
+                            x.detail,
+                            x.describe(ex_ar=True, op_escape=False),
+                            x.describe(breakout=True))]
+    redo_node = x
+    for i in range(reps - 1):
+        ev._jump_to(ev.token_list.index(node)+2) # skip function open paren
+        #print(f"evaluator current {ev.iter_pos}: {ev._current()}")
+        redo_node = ev.expr()
+        flats.append(FlatExpression(redo_node.value,
+                                    redo_node.detail,
+                                    redo_node.describe(ex_ar=True, op_escape=False),
+                                    redo_node.describe(breakout=True)))
+    # jump forward past end of function parentheses
+    ev._jump_to(exit_iter_pos)
+
+    node.detail = MultiExpression(flats)
+    node.value = node.detail
+
 def _number_nud(self, ev):
     return self
 
@@ -516,7 +618,9 @@ Evaluator.register_symbol("NUMBER").as_prefix = _number_nud
 Evaluator.register_symbol("END")
 Evaluator.register_symbol("(").as_prefix = _left_paren_nud
 Evaluator.register_symbol(")")
-Evaluator.register_function_single("sqrt", _sqrt_operator, 0)
+Evaluator.register_symbol(",")
+Evaluator.register_function_double("repeat", _repeat_function)
+Evaluator.register_function_single("sqrt", _sqrt_operator)
 
 Evaluator.register_infix("+", _add_operator, 10)
 Evaluator.register_infix("-", _subtract_operator, 10)
