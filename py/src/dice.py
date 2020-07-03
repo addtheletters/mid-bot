@@ -14,14 +14,14 @@ KEYWORDS = [
 ]
 KEYWORD_PATTERN = '|'.join(KEYWORDS)
 TOKEN_SPEC = [
-    ("NUMBER",   r"\d+(\.\d*)?"),  # Integer or decimal number
-    ("KEYWORD",  KEYWORD_PATTERN), # Keywords
-    ("DICE",     r"[dk][hl]|[d]"), # Diceroll operators
-    ("OP",       r"[+\-*/%^()!]"), # Generic operators
-    ("SEP",      r"[,]"),          # Separators like commas
-    ("END",      r"[;\n]"),        # Line end / break characters
-    ("SKIP",     r"[ \t]+"),       # Skip over spaces and tabs
-    ("MISMATCH", r"."),            # Any other character
+    ("NUMBER",   r"\d+(\.\d*)?"),    # Integer or decimal number
+    ("KEYWORD",  KEYWORD_PATTERN),   # Keywords
+    ("DICE",     r"[dk][hl]|[d]"),   # Diceroll operators
+    ("OP",       r"[+\-*×/÷%^()!]"), # Generic operators
+    ("SEP",      r"[,]"),            # Separators like commas
+    ("END",      r"[;\n]"),          # Line end / break characters
+    ("SKIP",     r"[ \t]+"),         # Skip over spaces and tabs
+    ("MISMATCH", r"."),              # Any other character
 ]
 TOKEN_PATTERN = re.compile(
     '|'.join(f"(?P<{pair[0]}>{pair[1]})" for pair in TOKEN_SPEC))
@@ -767,15 +767,16 @@ Evaluator.register_function_single("sqrt", _sqrt_operator)
 Evaluator.register_infix("+", _add_operator, 10)
 Evaluator.register_infix("-", _subtract_operator, 10)
 Evaluator.register_infix("*", _mult_operator, 20)
+Evaluator.register_infix("×", _mult_operator, 20)
 Evaluator.register_infix("/", _div_operator, 20)
+Evaluator.register_infix("÷", _div_operator, 20)
 Evaluator.register_infix("%", _remainder_operator, 20)
 Evaluator.register_prefix("-", _negate_operator, 100)
 Evaluator.register_infix("^", _pow_operator, 110, right_assoc=True)
 
-Evaluator.register_postfix("!", _factorial_operator, 120)
-
 Evaluator.register_infix("C", _choose_operator, 130)._spaces = True
 Evaluator.register_infix("choose", _choose_operator, 130)._spaces = True
+Evaluator.register_postfix("!", _factorial_operator, 140)
 
 Evaluator.register_infix("dl", _drop_low_operator, 190)
 Evaluator.register_infix("dh", _drop_high_operator, 190)

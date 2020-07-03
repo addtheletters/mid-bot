@@ -133,17 +133,17 @@ __Keep/Drop__ `kh` (keep high), `kl` (keep low), `dh` (drop high), `dl` (drop lo
     Use as `<values>kh<N>` to keep the `<N>` highest value from `<diceroll>`.
     `<values>` must be a collection of values, like rolled dice. `<N>` must be a positive integer.
     Example: `{BOT_SUMMON_PREFIX}roll 4d6kh3` or `{BOT_SUMMON_PREFIX}roll repeat(3d6, 5)dl2`
-__Combinatorics__ `C` or `choose`
-    Use as `<n> C <k>` or `<n> choose <k>`. (https://en.wikipedia.org/wiki/Combination).
-__Arithmetic__ `+ - * / % ^ ! sqrt()`
-    Use as you'd expect. `1+4`, `2*8`, `4^3^2`...
-    `%` is remainder. `^` is power, not xor.
+__Combinatorics__ `! C choose`
     `!` is factorial. `5! = 1 * 2 * 3 * 4 * 5`
         Double factorial doesn't exist: `5!!` is treated as `(5!)!`.
         Likewise, dice exploding doesn't exist yet.
-    `sqrt(<x>)` tries to get the square root of `<x>`.
-__Repeat__ `repeat()`
+    Use as `<n> C <k>` or `<n> choose <k>`. (https://en.wikipedia.org/wiki/Combination).
+__Arithmetic__ `+ - * / % ^`
+    Use as you'd expect. `1+4`, `2*8`, `4^3^2`...
+    `%` is remainder. `^` is power, not xor.
+__Functions__ `repeat() sqrt()`
     `repeat(<expression>, <n>)` to roll `<expression>`, `<n>` times.
+    `sqrt(<x>)` tries to get the square root of `<x>`.
 __Parentheses__ `( )` enforce associativity and order of operations.
     Example: `{BOT_SUMMON_PREFIX}roll 3d((2+23)/5)`
 __Semicolons__ `;` act as dividers, allowing several independent rolls from one message.
