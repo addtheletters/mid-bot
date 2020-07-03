@@ -787,12 +787,6 @@ Evaluator.register_infix("d", _dice_operator, 200)
 Evaluator.register_prefix("d", _dice_operator_prefix, 200)
 
 if __name__ == "__main__":
-    collected = CollectedValues([1, 2, 3], [0,])
-    print(collected.get_all_items())
-    print(collected.get_remaining())
-    print(collected.aggregate())
-    print(collected.total())
-
     while True:
         intext = input()
         try:
