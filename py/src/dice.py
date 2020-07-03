@@ -1,7 +1,8 @@
 # Dicerolling.
 # Parser and evaluator for dice roll inputs.
 
-import collections, re
+import collections, itertools, operator, re
+from functools import total_ordering
 from math import factorial, sqrt
 from random import randint
 from utils import escape, codeblock
@@ -76,27 +77,6 @@ def symbolize(symbol_table, tokens):
         all_rolls.append(current_roll)
     return all_rolls
 
-class DiceResult(collections.namedtuple("DiceResult",
-        ["count", "size", "total", "rolls", "negative", "dropped"])):
-    def breakout(self):
-        drops_striked = format_dropped(self.rolls, self.dropped)
-        return f"({'+'.join(drops_striked)})"
-    def negated(self):
-        return f"{'-' if self.negative else ''}"
-    def base_roll(self):
-        return f"{self.count}d{self.size}"
-    def __repr__(self):
-        return self.base_roll()
-
-def format_dropped(rolls, dropped):
-    results = []
-    for i in range(len(rolls)):
-        if i in dropped:
-            results.append(f"~~{rolls[i]}~~")
-        else:
-            results.append(f"{rolls[i]}")
-    return results
-
 def force_integral(value, description=""):
     if isinstance(value, int):
         return value
@@ -124,92 +104,249 @@ def dice_roll(count, size):
     else:
         for i in range(count):
             rolls.append(randint(1, size))
-    total = -sum(rolls) if negative else sum(rolls)
-    return DiceResult(count, size, total, rolls, negative, [])
 
-# Drop some dice from a roll and update its total.
-# Defaults to dropping the `n` lowest dice.
-# `high` option means dropping high dice.
-# `keep` option means keeping `n` dice and dropping the rest.
+    return DiceValues(size, negative, items=rolls)
+
+# Drop the highest or lowest value items from a collection.
+# Defaults to dropping the `n` lowest items.
+# `high` option means dropping high items.
+# `keep` option means keeping `n` items and dropping the rest.
 def dice_drop(dice, n, high=False, keep=False):
-    if not isinstance(dice, DiceResult):
-        raise SyntaxError(f"Can't drop/keep (operand not a dice roll)")
-    n = force_integral(n, "dice to drop")
+    if not isinstance(dice, CollectedValues):
+        raise SyntaxError(f"Can't drop/keep (operand not a collection)")
+    n = force_integral(n, "items to drop")
     if keep:
         if n < 0:
-            raise ValueError(f"Can't keep negative dice ({n})")
+            raise ValueError(f"Can't keep negative # of items ({n})")
         # if keeping dice, we're dropping a complementary dice.
         # if we've already dropped more than that, we don't need to drop more.
-        n = dice.count - len(dice.dropped) - n
+        n = dice.get_remaining_count() - n
         if n < 0: # allow keeping more dice than are rolled (drop none)
             n = 0
     if n < 0:
-        raise ValueError(f"Can't drop negative dice ({n})")
+        raise ValueError(f"Can't drop negative # of items ({n})")
+
+    new_values = dice.copy()
     if n == 0:
-        return DiceResult(
-            dice.count, dice.size, dice.total, dice.rolls, dice.negative,
-            dice.dropped)
+        # nothing to drop
+        return new_values
 
     # sort and pair with indices
-    sdice = sorted(list(enumerate(dice.rolls)),
+    sdice = sorted(list(enumerate(dice.get_all_items())),
                     key=lambda x:x[1],
                     reverse=high^keep)
-
     # remove already dropped
     sdice = list(filter(lambda x: x[0] not in dice.dropped, sdice))
-
-    # drop n more dice
+    # find n more to drop
     new_drops = [x[0] for x in sdice[:n]]
-    dropped = dice.dropped + new_drops
-    total = 0
-    for i in range(len(dice.rolls)):
-        if i not in dropped:
-            total += dice.rolls[i]
-    if dice.negative:
-        total = -total
 
-    return DiceResult(
-        dice.count, dice.size, total, dice.rolls, dice.negative, dropped)
+    new_values.dropped += new_drops
+    return new_values
 
-class FlatExpression(collections.namedtuple("FlatExpression",
-        ["value", "detail", "unevaluated", "breakout"])):
+# The result of evaluating an expression, to be stored in a parse tree node
+# which required computation or collection. This is for operations with
+# complexity that cannot be represented by formatting just the operator and
+# operands.
+class ExprResult:
+    # repr will be how this expression's final result will be shown
     def __repr__(self):
-        return self.breakout
+        return f"{self.get_value()}"
 
-class MultiExpression:
-    def __init__(self, contents):
-        self.contents = contents
+    # Helpers allowing literal values and ExprResult instances to be handled
+    # by a single code path
+    @staticmethod
+    def value(item):
+        if isinstance(item, ExprResult):
+            return item.get_value()
+        return item
+    @staticmethod
+    def description(item):
+        if isinstance(item, ExprResult):
+            return item.get_description()
+        return f"{item}"
+    @staticmethod
+    def unevaluated(item):
+        if isinstance(item, ExprResult):
+            return item.get_unevaluated()
+        return f"{item}"
+
+    # Numerical value for this expression.
+    def get_value(self):
+        raise NotImplementedError("Value missing for this expression.")
+
+    # String description of how this expression was evaluated.
+    def get_description(self):
+        raise NotImplementedError("Description missing for this expression.")
+
+    # String representing the state of the expression before any evaluation was done.
+    def get_unevaluated(self):
+        raise NotImplementedError("Expression missing unevaluated state.")
+
+# Represents an expression which resolved to a single value,
+# storing only the final value and description strings.
+@total_ordering
+class FlatExpr(ExprResult):
+    def __init__(self, value, description, unevaluated):
+        self.value = value
+        self.description = description
+        self.unevaluated = unevaluated
+    # Overrides.
+    def get_value(self):
+        return self.value
+    def get_description(self):
+        return self.description
+    def get_unevaluated(self):
+        return self.unevaluated
+    def __eq__(self, other):
+        return self.value == ExprResult.value(other)
+    def __lt__(self, other):
+        return self.value < ExprResult.value(other)
+
+# For representing an expression which evaluated to a collection from which items
+# could have been added to or dropped from.
+# Items are expected to be repr'able, either a literal value or ExprResult
+class CollectedValues(ExprResult):
+    def __init__(self, items=[], dropped=[], added=[]):
+        super().__init__()
+        # dropped and added are lists of item indices, not items themselves
+        self.items = items
+        self.dropped = dropped
+        self.added = added
 
     def __repr__(self):
-        return f"{len(self.contents)} results"
+        return f"[{len(self.items)} results]"
 
-    def unevaluated(self):
-        if len(self.contents) < 0:
+    def copy(self):
+        return CollectedValues(self.items.copy(),
+                               self.dropped.copy(),
+                               self.added.copy())
+
+    # Override. Default to returning the sum of non-dropped items.
+    def get_value(self):
+        return self.total()
+
+    def format_item(self, base, index):
+        if index in self.dropped:
+            base = f"~~{base}~~"
+        if index in self.added:
+            base = f"_{base}_"
+        return base
+
+    # Override.
+    def get_description(self, joiner=", "):
+        out = joiner.join(
+            [self.format_item(ExprResult.description(self.items[i]), i)
+                for i in range(len(self.items))])
+        return out
+
+    # Override.
+    def get_unevaluated(self, joiner=", "):
+        out = joiner.join(
+            [self.format_item(ExprResult.unevaluated(self.items[i]), i)
+                for i in range(len(self.items))])
+        return out
+
+    # Returns all items, including dropped ones.
+    def get_all_items(self):
+        return self.items
+
+    # Exclude dropped items.
+    def get_remaining(self):
+        remaining = []
+        for i in range(len(self.items)):
+            if i not in self.dropped:
+                remaining.append(self.items[i])
+        return remaining
+
+    def get_remaining_count(self):
+        return len(self.items) - len(self.dropped)
+
+    # Aggregate together non-dropped items.
+    def aggregate(self, func=None):
+        values = self.get_remaining()
+        return list(itertools.accumulate(values, func))
+
+    def total(self, func=None):
+        if self.get_remaining_count() < 1:
+            return 0
+        return self.aggregate(func)[-1]
+
+class MultiExpression(CollectedValues):
+    def __init__(self, contents=[], copy_source=None):
+        if copy_source:
+            super().__init__(
+                items=copy_source.items,
+                dropped=copy_source.dropped,
+                added=copy_source.added)
+        else:
+            super().__init__(items=contents)
+            
+    def __repr__(self):
+        return f"{self.get_remaining_count()} results"
+
+    def copy(self):
+        return MultiExpression(copy_source=self)
+
+    def get_value(self):
+        return None
+
+    def get_description(self, joiner="\n\t"):
+        out = "[\n"
+        out += joiner.join(
+            [self.format_item(f"**{ExprResult.value(self.items[i])}**  |  {ExprResult.description(self.items[i])}", i)
+                for i in range(len(self.items))])
+        return out + "\n]"
+
+    def get_unevaluated(self):
+        if len(self.get_all_items()) < 0:
             return "[empty MultiExpression]"
 
         all_identical = True
-        first = self.contents[0]
-        for other in self.contents[1:]:
-            if first.unevaluated != other.unevaluated:
+        first = self.items[0]
+        for other in self.items[1:]:
+            if ExprResult.unevaluated(first) != ExprResult.unevaluated(other):
                 all_identical = False
                 break
 
         if all_identical:
-            return f"[{len(self.contents)} repeats of: {first.unevaluated}]"
+            return f"[{len(self.get_all_items())} repeats of: {ExprResult.unevaluated(first)}]"
 
         out = "["
-        for item in self.contents:
-            out += f"{item.unevaluated}, "
+        for item in self.items:
+            out += f"{ExprResult.unevaluated(item)}, "
         out = out[:-2]
         out += "]"
         return out
 
-    def breakout(self, nesting=1):
-        out = "[\n"
-        for item in self.contents:
-            out += "    " * nesting
-            out += f"**{item.value}**  |  {item}\n"
-        return out + "]"
+class DiceValues(CollectedValues):
+    def __init__(self, dice_size, negated=False,
+                 items=[], dropped=[], added=[]):
+        super().__init__(items, dropped, added)
+        self.dice_size = dice_size
+        self.negated = negated
+
+    def copy(self):
+        return DiceValues(self.dice_size, self.negated, 
+                          self.items.copy(),
+                          self.dropped.copy(),
+                          self.added.copy())
+
+    def get_value(self):
+        return super().get_value() * (-1 if self.negated else 1)
+
+    # Override for joiner.
+    def get_description(self):
+        return "(" + super().get_description(joiner="+") + ")"
+
+    # Override to hide rolls.
+    def get_unevaluated(self):
+        return ""
+
+    def get_dice_size(self):
+        return self.dice_size
+
+    def get_base_roll_description(self):
+        return f"{self.get_remaining_count()-len(self.added)}d{self.get_dice_size()}"
 
 # Based on Pratt top-down operator precedence.
 # http://effbot.org/zone/simple-top-down-parsing.htm
@@ -264,7 +401,7 @@ class Evaluator:
         _spaces = False
 
         def __init__(self):
-            # literal value or computation result
+            # numerical literal or resolved computation value
             self.value = None
             # detailed info on operator computation such as dice resolution
             self.detail = None
@@ -294,9 +431,9 @@ class Evaluator:
         def describe(self, breakout=False, op_escape=True,
                      ex_ar=False, predrop=False):
             if self._kind == "repeat":
-                if not breakout:
-                    return self.detail.unevaluated()
-                return self.detail.breakout()
+                if predrop or (not breakout):
+                    return ExprResult.unevaluated(self.detail)
+                return ExprResult.description(self.detail)
 
             if (not ex_ar) and (not self.contains_diceroll()):
                 if self.value != None:
@@ -308,9 +445,9 @@ class Evaluator:
                 if self.second != None else ""
 
             if (not predrop) and breakout and self.is_diceroll():
-                dice_breakout = " " + self.detail.breakout()
+                dice_breakout = " " + self.detail.get_description()
                 if self._kind == "d":
-                    if self.detail.count < 2:
+                    if len(self.detail.get_all_items()) < 2:
                         dice_breakout = ""
                     dice_count = "" if self.second == None\
                                     else describe_first
@@ -320,9 +457,10 @@ class Evaluator:
                     return f"[{dice_count}d{dice_size}"+\
                             f"{dice_breakout}={self.value}]"
                 else:
+                    value_tail = str(self.value) if self.value else ""
                     return f"[{self.first.describe(breakout, op_escape, ex_ar, predrop=True)}"+\
                             f"{self._kind}{describe_second}"+\
-                            f"{dice_breakout}={self.value}]"
+                            f"{dice_breakout}{value_tail}]"
             
             spacer = " " if self._spaces else ""
 
@@ -363,6 +501,9 @@ class Evaluator:
             out = [self._kind, self.first, self.second]
             out = map(str, filter(None, out))
             return "<" + " ".join(out) + ">"
+
+        def is_collection(self):
+            return is_diceroll() or self._kind == "repeat"
 
         def is_diceroll(self):
             return self._kind == "d" or self.is_dropkeep()
@@ -502,37 +643,40 @@ def roll(intext):
 def format_roll_results(results):
     out = ""
     for row in results:
+        final_value = row.value
+        if final_value == None and row.detail != None:
+            final_value = str(row.detail)
         out += codeblock(row.describe(breakout=False,
                                       op_escape=False,
                                       ex_ar=True))+\
-                f"=> **{row.value}**"+\
+                f"=> **{final_value}**"+\
                 f"  |  {row.describe(breakout=True)}"
         out += "\n"
     return out
 
 def _dice_operator(node, x, y):
     node.detail = dice_roll(x.value, y.value)
-    node.value = node.detail.total
+    node.value = node.detail.get_value()
 
 def _dice_operator_prefix(node, x):
     node.detail = dice_roll(1, x.value)
-    node.value = node.detail.total
+    node.value = node.detail.get_value()
 
-def _dice_drop_low_operator(node, x, y):
+def _drop_low_operator(node, x, y):
     node.detail = dice_drop(x.detail, y.value)
-    node.value = node.detail.total
+    node.value = node.detail.get_value()
 
-def _dice_drop_high_operator(node, x, y):
+def _drop_high_operator(node, x, y):
     node.detail = dice_drop(x.detail, y.value, high=True)
-    node.value = node.detail.total
+    node.value = node.detail.get_value()
 
-def _dice_keep_low_operator(node, x, y):
+def _keep_low_operator(node, x, y):
     node.detail = dice_drop(x.detail, y.value, high=False, keep=True)
-    node.value = node.detail.total
+    node.value = node.detail.get_value()
 
-def _dice_keep_high_operator(node, x, y):
+def _keep_high_operator(node, x, y):
     node.detail = dice_drop(x.detail, y.value, high=True, keep=True)
-    node.value = node.detail.total
+    node.value = node.detail.get_value()
 
 def _add_operator(node, x, y):
     node.value = x.value+y.value
@@ -584,19 +728,16 @@ def _repeat_function(node, x, y, ev):
         node.value = node.detail
         return
 
-    flats = [FlatExpression(x.value,
-                            x.detail,
-                            x.describe(ex_ar=True, op_escape=False),
-                            x.describe(breakout=True))]
+    flats = [FlatExpr(x.value,
+                    x.describe(breakout=True),
+                    x.describe(ex_ar=True, op_escape=False))]
     redo_node = x
     for i in range(reps - 1):
         ev._jump_to(ev.token_list.index(node)+2) # skip function open paren
-        #print(f"evaluator current {ev.iter_pos}: {ev._current()}")
         redo_node = ev.expr()
-        flats.append(FlatExpression(redo_node.value,
-                                    redo_node.detail,
-                                    redo_node.describe(ex_ar=True, op_escape=False),
-                                    redo_node.describe(breakout=True)))
+        flats.append(FlatExpr(redo_node.value,
+                            redo_node.describe(breakout=True),
+                            redo_node.describe(ex_ar=True, op_escape=False)))
     # jump forward past end of function parentheses
     ev._jump_to(exit_iter_pos)
 
@@ -635,15 +776,21 @@ Evaluator.register_postfix("!", _factorial_operator, 120)
 Evaluator.register_infix("C", _choose_operator, 130)._spaces = True
 Evaluator.register_infix("choose", _choose_operator, 130)._spaces = True
 
-Evaluator.register_infix("dl", _dice_drop_low_operator, 190)
-Evaluator.register_infix("dh", _dice_drop_high_operator, 190)
-Evaluator.register_infix("kl", _dice_keep_low_operator, 190)
-Evaluator.register_infix("kh", _dice_keep_high_operator, 190)
+Evaluator.register_infix("dl", _drop_low_operator, 190)
+Evaluator.register_infix("dh", _drop_high_operator, 190)
+Evaluator.register_infix("kl", _keep_low_operator, 190)
+Evaluator.register_infix("kh", _keep_high_operator, 190)
 
 Evaluator.register_infix("d", _dice_operator, 200)
 Evaluator.register_prefix("d", _dice_operator_prefix, 200)
 
 if __name__ == "__main__":
+    collected = CollectedValues([1, 2, 3], [0,])
+    print(collected.get_all_items())
+    print(collected.get_remaining())
+    print(collected.aggregate())
+    print(collected.total())
+
     while True:
         intext = input()
         try:
