@@ -126,7 +126,7 @@ This handles a subset of standard dice notation (https://en.wikipedia.org/wiki/D
 Here's what it can do, roughly in order of operator precedence.
 
 __Dice roll__ `d`
-    Use as `<N>d<S>`, which rolls `<N>` dice of size `<S>`, adding together the results.
+    Use as `<N>d<S>` to roll `<N>` dice of size `<S>`, adding the results.
     `<N>` and `<S>` must be positive integers. `<N>` omitted will roll 1 dice.
     Example: `{BOT_SUMMON_PREFIX}roll 8d6`
 __Explode__ `!`

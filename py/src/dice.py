@@ -237,12 +237,12 @@ class FlatExpr(ExprResult):
 # could have been added to or dropped from.
 # Items are expected to be repr'able, either a literal value or ExprResult
 class CollectedValues(ExprResult):
-    def __init__(self, items=[], dropped=[], added=[]):
+    def __init__(self, items=None, dropped=None, added=None):
         super().__init__()
         # dropped and added are lists of item indices, not items themselves
-        self.items = items
-        self.dropped = dropped
-        self.added = added
+        self.items = items if items else []
+        self.dropped = dropped if dropped else []
+        self.added = added if added else []
 
     def __repr__(self):
         return f"[{len(self.items)} results]"
@@ -305,7 +305,7 @@ class CollectedValues(ExprResult):
 # Represents several expressions' results collected together by one operator,
 # such as `repeat()`.
 class MultiExpr(CollectedValues):
-    def __init__(self, contents=[], copy_source=None):
+    def __init__(self, contents=None, copy_source=None):
         if copy_source != None:
             super().__init__(
                 items=copy_source.items.copy(),
@@ -313,7 +313,7 @@ class MultiExpr(CollectedValues):
                 added=copy_source.added.copy())
         else:
             super().__init__(items=contents)
-            
+
     def __repr__(self):
         return f"{self.get_remaining_count()} result(s)"
 
@@ -321,7 +321,9 @@ class MultiExpr(CollectedValues):
         return MultiExpr(copy_source=self)
 
     def get_value(self):
-        return None
+        if self.get_remaining_count() == 1:
+            return self.get_remaining()[0].get_value()
+        return str(self)
 
     def get_description(self, joiner="\n"):
         out = "[\n"
@@ -353,7 +355,7 @@ class MultiExpr(CollectedValues):
 
 class DiceValues(CollectedValues):
     def __init__(self, dice_size, negated=False,
-                 items=[], dropped=[], added=[]):
+                 items=None, dropped=None, added=None):
         super().__init__(items, dropped, added)
         self.dice_size = dice_size
         self.negated = negated
@@ -380,6 +382,9 @@ class DiceValues(CollectedValues):
 
     def get_base_roll_description(self):
         return f"{self.get_remaining_count()-len(self.added)}d{self.get_dice_size()}"
+
+class SuccessValues(DiceValues):
+    def __init__(self, dice_)
 
 # Based on Pratt top-down operator precedence.
 # http://effbot.org/zone/simple-top-down-parsing.htm
@@ -722,12 +727,6 @@ def _div_operator(node, x, y):
 
 def _pow_operator(node, x, y):
     node._value = x.get_value() ** y.get_value()
-
-# def _bang_operator(node, x):
-#     if x.detail != None and isinstance(x.detail, DiceValues):
-#         node.detail = dice_explode(x.detail)
-#     else:
-#         node._value = factorial(x.get_value())
 
 def _factorial_operator(node, x):
     node._value = factorial(x.get_value())
