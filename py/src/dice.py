@@ -10,7 +10,7 @@ from utils import escape, codeblock
 ProtoToken = collections.namedtuple("ProtoToken", ["type", "value"])
 
 KEYWORDS = [
-    "C", "choose", "repeat", "sqrt",
+    "C", "choose", "repeat", "sqrt", "fact",
 ]
 KEYWORD_PATTERN = '|'.join(KEYWORDS)
 TOKEN_SPEC = [
@@ -85,6 +85,12 @@ def force_integral(value, description=""):
     else:
         raise ValueError(f"Expected integer # {description}: {value}")
 
+def single_roll(size):
+    if size == 0:
+        return 0
+    else:
+        return randint(1, size)
+
 def dice_roll(count, size):
     rolls = []
     negative = False
@@ -98,12 +104,8 @@ def dice_roll(count, size):
         count = -count
         negative = True
 
-    if size == 0:
-        for i in range(count):
-            rolls.append(0)
-    else:
-        for i in range(count):
-            rolls.append(randint(1, size))
+    for i in range(count):
+        rolls.append(single_roll(size))
 
     return DiceValues(size, negative, items=rolls)
 
@@ -142,6 +144,35 @@ def dice_drop(dice, n, high=False, keep=False):
     
     new_values.dropped.extend(new_drops)
     return new_values
+
+def dice_explode(dice, condition=None, max_explosion=1000):
+    if not isinstance(dice, DiceValues):
+        raise SyntaxError(f"Can't explode (not dice)")
+    if condition == None:
+        condition = lambda x: (x >= dice.dice_size)
+
+    new_values = dice.copy()
+    rolls = new_values.get_all_items()
+
+    exploded = []
+    exploded_indices = []
+    for i in range(len(rolls)):
+        if i in dice.dropped:
+            continue
+        if condition(rolls[i]) and len(exploded) < max_explosion:
+            exploded_indices.append(len(rolls) + len(exploded))
+            exploded.append(single_roll(dice.dice_size))
+
+    i = 0
+    while i < len(exploded) and len(exploded) < max_explosion:
+        if condition(exploded[i]):
+            exploded_indices.append(len(rolls) + len(exploded))
+            exploded.append(single_roll(dice.dice_size))
+        i += 1
+
+    new_values.items.extend(exploded)
+    new_values.added.extend(exploded_indices)
+    return new_values 
 
 # The result of evaluating an expression, to be stored in a parse tree node
 # which required computation or collection. This is for operations with
@@ -435,7 +466,7 @@ class Evaluator:
         # and possible parentheses inserted for clarity.
         def describe(self, uneval=False, predrop=False):
             describe_first = self.first.describe(uneval=uneval,
-                predrop=self.is_dropkeep())\
+                predrop=self.is_dropkeepadd())\
                     if self.first != None else ""
             describe_second = self.second.describe(uneval=uneval)\
                     if self.second != None else ""
@@ -510,10 +541,10 @@ class Evaluator:
             return self.is_diceroll() or self._kind == "repeat"
 
         def is_diceroll(self):
-            return self._kind == "d" or self.is_dropkeep()
+            return self._kind == "d" or self.is_dropkeepadd()
 
-        def is_dropkeep(self):
-            return self._kind in ("dl", "dh", "kl", "kh")
+        def is_dropkeepadd(self):
+            return self._kind in ("dl", "dh", "kl", "kh", "!")
 
         # Is this node dice, or does any node in this subtree have dice?
         def contains_diceroll(self):
@@ -692,8 +723,17 @@ def _div_operator(node, x, y):
 def _pow_operator(node, x, y):
     node._value = x.get_value() ** y.get_value()
 
+# def _bang_operator(node, x):
+#     if x.detail != None and isinstance(x.detail, DiceValues):
+#         node.detail = dice_explode(x.detail)
+#     else:
+#         node._value = factorial(x.get_value())
+
 def _factorial_operator(node, x):
     node._value = factorial(x.get_value())
+
+def _dice_explode_operator(node, x):
+    node.detail = dice_explode(x.detail)
 
 def _choose_operator(node, x, y):
     n = force_integral(x.get_value(), "choice operand")
@@ -756,6 +796,7 @@ Evaluator.register_symbol(")")
 Evaluator.register_symbol(",")
 Evaluator.register_function_double("repeat", _repeat_function)
 Evaluator.register_function_single("sqrt", _sqrt_operator)
+Evaluator.register_function_single("fact", _factorial_operator)
 
 Evaluator.register_infix("+", _add_operator, 10)
 Evaluator.register_infix("-", _subtract_operator, 10)
@@ -769,7 +810,7 @@ Evaluator.register_infix("^", _pow_operator, 110, right_assoc=True)
 
 Evaluator.register_infix("C", _choose_operator, 130)._spaces = True
 Evaluator.register_infix("choose", _choose_operator, 130)._spaces = True
-Evaluator.register_postfix("!", _factorial_operator, 140)
+Evaluator.register_postfix("!", _dice_explode_operator, 140)
 
 Evaluator.register_infix("dl", _drop_low_operator, 190)
 Evaluator.register_infix("dh", _drop_high_operator, 190)
