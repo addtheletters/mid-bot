@@ -195,11 +195,6 @@ class ExprResult:
         if isinstance(item, ExprResult):
             return item.get_description()
         return f"{item}"
-    @staticmethod
-    def unevaluated(item):
-        if isinstance(item, ExprResult):
-            return item.get_unevaluated()
-        return f"{item}"
 
     # Numerical value for this expression.
     def get_value(self):
@@ -208,10 +203,6 @@ class ExprResult:
     # String description of how this expression was evaluated.
     def get_description(self):
         raise NotImplementedError("Description missing for this expression.")
-
-    # String representing the state of the expression before any evaluation was done.
-    def get_unevaluated(self):
-        raise NotImplementedError("Expression missing unevaluated state.")
 
 # Represents an expression which resolved to a single value,
 # storing only the final value and description strings.
@@ -226,8 +217,6 @@ class FlatExpr(ExprResult):
         return self.value
     def get_description(self):
         return self.description
-    def get_unevaluated(self):
-        return self.unevaluated
     def __eq__(self, other):
         return self.value == ExprResult.value(other)
     def __lt__(self, other):
@@ -267,13 +256,6 @@ class CollectedValues(ExprResult):
     def get_description(self, joiner=", "):
         out = joiner.join(
             [self.format_item(ExprResult.description(self.items[i]), i)
-                for i in range(len(self.items))])
-        return out
-
-    # Override.
-    def get_unevaluated(self, joiner=", "):
-        out = joiner.join(
-            [self.format_item(ExprResult.unevaluated(self.items[i]), i)
                 for i in range(len(self.items))])
         return out
 
@@ -332,27 +314,6 @@ class MultiExpr(CollectedValues):
                 for i in range(len(self.items))])
         return out + "\n]"
 
-    def get_unevaluated(self):
-        if len(self.get_all_items()) < 0:
-            return "[empty MultiExpr]"
-
-        all_identical = True
-        first = self.items[0]
-        for other in self.items[1:]:
-            if ExprResult.unevaluated(first) != ExprResult.unevaluated(other):
-                all_identical = False
-                break
-
-        if all_identical:
-            return f"[{len(self.get_all_items())} repeats of: {ExprResult.unevaluated(first)}]"
-
-        out = "["
-        for item in self.items:
-            out += f"{ExprResult.unevaluated(item)}, "
-        out = out[:-2]
-        out += "]"
-        return out
-
 class DiceValues(CollectedValues):
     def __init__(self, dice_size, negated=False,
                  items=None, dropped=None, added=None):
@@ -373,18 +334,30 @@ class DiceValues(CollectedValues):
     def get_description(self):
         return "(" + super().get_description(joiner="+") + ")=" + str(self.get_value())
 
-    # Override to hide rolls.
-    def get_unevaluated(self):
-        return ""
-
     def get_dice_size(self):
         return self.dice_size
 
-    def get_base_roll_description(self):
-        return f"{self.get_remaining_count()-len(self.added)}d{self.get_dice_size()}"
+# The result of a conditional filter applied to collected values, conceptually
+# some number of dice rolls that successful meet some operator's condition.
+# Total value is evaluated to the number of non-dropped items remaining.
+class SuccessValues(CollectedValues):
+    def __init__(self, comparison,
+                 items=None, dropped=None, added=None):
+        super().__init__(items, dropped, added)
+        self.comparison = comparison    # A string representing the filter used to determine success.
+        
+    def copy(self):
+        return SuccessValues(self.comparison,
+                            self.items.copy(),
+                            self.dropped.copy(),
+                            self.added.copy())
 
-class SuccessValues(DiceValues):
-    def __init__(self, dice_)
+    def get_value(self):
+        return self.get_remaining_count()
+
+    def get_description(self):
+        return "(" + super().get_description(joiner=",")\
+                + ")" + self.comparison + str(self.get_value())
 
 # Based on Pratt top-down operator precedence.
 # http://effbot.org/zone/simple-top-down-parsing.htm
@@ -471,7 +444,7 @@ class Evaluator:
         # and possible parentheses inserted for clarity.
         def describe(self, uneval=False, predrop=False):
             describe_first = self.first.describe(uneval=uneval,
-                predrop=self.is_dropkeepadd())\
+                predrop=(self.is_dropkeepadd() or (predrop and self.is_collection())))\
                     if self.first != None else ""
             describe_second = self.second.describe(uneval=uneval)\
                     if self.second != None else ""
