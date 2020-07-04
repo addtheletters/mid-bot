@@ -1,7 +1,9 @@
 import dice
 import unittest
 
+
 class DiceTest(unittest.TestCase):
+
     def assertFirstRollEquals(self, roll_input, expected):
         results = dice.roll(roll_input)
         self.assertAlmostEqual(results[0].get_value(), expected)

@@ -9,7 +9,9 @@ TOKEN = os.getenv('DISCORD_TOKEN')
 
 DEFAULT_ACK_EMOJI = '🤖'
 
+
 class ExperimentClient(discord.Client):
+
     def __init__(self):
         discord.Client.__init__(self)
         self.guild_emojis = []

@@ -19,11 +19,14 @@ logging.basicConfig(level=logging.INFO)
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 
+
 def help_notice():
     return f"See `{BOT_SUMMON_PREFIX}{DEFAULT_HELP_KEY}`."
 
+
 # Wrapper for ProcessPool to allow use with asyncio run_in_executor
 class PebbleExecutor(concurrent.futures.Executor):
+
     def __init__(self, max_workers, timeout=None):
         self.pool = ProcessPool(max_workers=max_workers)
         self.timeout = timeout
@@ -44,26 +47,37 @@ class PebbleExecutor(concurrent.futures.Executor):
         self.pool.join()
         log.info("Workers joined.")
 
+
 class ClientData:
+
     def __init__(self):
         self.card_deck = cards.shuffle(cards.build_deck_52())
         self.card_logs = []
+
     def get_card_deck(self):
         return self.card_deck
+
     def set_card_deck(self, deck):
         self.card_deck = deck
+
     def get_card_logs(self):
         return self.card_logs
+
     def clear_card_logs(self):
         self.card_logs = []
+
     def add_card_log(self, message):
         self.card_logs.append(message)
 
+
 class DataManager(SyncManager):
+
     def __init__(self):
         SyncManager.__init__(self)
 
+
 class MidClient(discord.Client):
+
     def __init__(self):
         discord.Client.__init__(self)
         self.executor = PebbleExecutor(
@@ -131,8 +145,8 @@ class MidClient(discord.Client):
 
     async def execute_command(self, command_key, msg, intext):
         cmd_future = self.loop.run_in_executor(self.executor,
-                            self.commands[command_key].func,
-                            intext, self.data, f"{msg.author}")
+                                               self.commands[command_key].func,
+                                               intext, self.data, f"{msg.author}")
         try:
             response = await asyncio.wait_for(cmd_future,
                                               timeout=COMMAND_TIMEOUT)
@@ -147,8 +161,8 @@ class MidClient(discord.Client):
             raise
 
     async def on_ready(self):
-        log.info(f"{self.user} is now connected to Discord in guilds:"\
-                +f"{[g.name for g in self.guilds]}")
+        log.info(f"{self.user} is now connected to Discord in guilds:"
+                 + f"{[g.name for g in self.guilds]}")
 
     async def on_message(self, msg):
         if (self.should_process_message(msg)):
@@ -162,7 +176,7 @@ class MidClient(discord.Client):
         # ignore empty messages
         if msg.content == None or len(msg.content) < 1:
             return False
-        # allow bot-mentions to be processed to inform users about the prefix 
+        # allow bot-mentions to be processed to inform users about the prefix
         return msg.content.startswith(BOT_SUMMON_PREFIX) or self.user in msg.mentions
 
     async def process_message(self, msg):
@@ -177,17 +191,17 @@ class MidClient(discord.Client):
                 if "hello" in msg.content.lower() or "hi" in msg.content.lower():
                     await reply(msg, f"Hi 🙂")
                     return
-                summon_text = BOT_SUMMON_PREFIX+"<command>"
+                summon_text = BOT_SUMMON_PREFIX + "<command>"
                 await reply(msg, f"Summon me using: {codeblock(summon_text)}")
                 return
 
             intext = msg.content[len(BOT_SUMMON_PREFIX):].strip().replace(INVISIBLE_SPACE, "")
             tokens = intext.split()
-            if len(tokens) < 1: # nothing following the prefix
+            if len(tokens) < 1:  # nothing following the prefix
                 await reply(msg, f"The bot hears you. {help_notice()}")
                 return
             command = tokens[0]
-            intext = intext[len(command)+1:].strip() # trim off command text
+            intext = intext[len(command) + 1:].strip()  # trim off command text
 
             if command in self.commands.keys():
                 try:

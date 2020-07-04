@@ -13,21 +13,24 @@ log = logging.getLogger(__name__)
 
 Command = namedtuple("Command", ["keys", "func", "info", "detailed"])
 
+
 def sub_help_notice(command):
     return f"See `{BOT_SUMMON_PREFIX}{DEFAULT_HELP_KEY} {command}`."
 
+
 def command_help(intext, *args):
-    if len(intext) < 1: # show command list
+    if len(intext) < 1:  # show command list
         help_info = "Available commands:\n"
         for cmd in COMMAND_CONFIG:
             help_info += f"{cmd.keys}: {cmd.info}\n"
         return codeblock(help_info, big=True)
-    else: # fetch detailed command help
+    else:  # fetch detailed command help
         key = intext.split(" ")[0]
         for cmd in COMMAND_CONFIG:
             if key in cmd.keys:
-                return cmd.detailed    
+                return cmd.detailed
         return f"No help available for unknown command {codeblock(key)}."
+
 
 def command_echo(intext, *args):
     if len(intext) == 0:
@@ -35,8 +38,10 @@ def command_echo(intext, *args):
     else:
         return f"{intext}"
 
+
 def command_shruggie(intext, *args):
     return escape("¯\\_(ツ)_/¯")
+
 
 def command_roll(intext, *args):
     try:
@@ -45,6 +50,7 @@ def command_roll(intext, *args):
     except Exception as err:
         log.info(f"Roll error: {err}")
         return f"Input not accepted.\n{codeblock(err, big=True)}"
+
 
 def command_holdem(intext, *args):
     if len(intext) == 0:
@@ -74,9 +80,9 @@ def command_holdem(intext, *args):
         deck = cards.shuffle(deck)
         ret = f"Deck shuffled."
     elif subcommand == "inspect":
-        top = deck[len(deck)-1] if len(deck) > 0 else None
+        top = deck[len(deck) - 1] if len(deck) > 0 else None
         bot = deck[0] if len(deck) > 0 else None
-        ret = f"{len(deck)} cards in deck. Top card is {top}. Bottom card is {bot}.";
+        ret = f"{len(deck)} cards in deck. Top card is {top}. Bottom card is {bot}."
     elif subcommand == "history":
         count = 1
         if subargs > 1:
@@ -99,27 +105,27 @@ def command_holdem(intext, *args):
 # A command function can return a string which will be sent as a response.
 COMMAND_CONFIG = [
     Command(["help"], command_help,
-        f"List available commands or show usage ({BOT_SUMMON_PREFIX}{DEFAULT_HELP_KEY} {DEFAULT_HELP_KEY}).",
-f"""
+            f"List available commands or show usage ({BOT_SUMMON_PREFIX}{DEFAULT_HELP_KEY} {DEFAULT_HELP_KEY}).",
+            f"""
 __**help**__
 Lists commands. Use a command by sending a message with the bot summon prefix (`{BOT_SUMMON_PREFIX}`) followed by the command keyword.
 Multiple keywords may be associated with the same command and will be listed with it.
 `{BOT_SUMMON_PREFIX}{DEFAULT_HELP_KEY} <command>` can be used to display detailed usage information about a particular command.
 """),
     Command(["echo", "repeat"], command_echo, "Repeat your message back.",
-f"""
+            f"""
 __**echo**__
 Sends the contents of your message back to you.
 The command keyword and bot prefix are excluded.
 """),
     Command(["shrug"], command_shruggie, "Shruggie.",
-"""
+            """
 __**shrug**__
 Displays a shruggie: ¯\\\\_(ツ)\\_/¯
 That's all.
 """),
     Command(["roll", "r"], command_roll, "Roll some dice.",
-f"""
+            f"""
 __**roll**__
 Rolls some dice and does some math.
 This handles a subset of standard dice notation (https://en.wikipedia.org/wiki/Dice_notation).
@@ -150,7 +156,7 @@ __Semicolons__ `;` act as dividers, allowing several independent rolls from one 
     Example: `{BOT_SUMMON_PREFIX}roll 1d20+5; 2d6+5`
 """),
     Command(["holdem", "h"], command_holdem, "Deal out cards.",
-f"""
+            f"""
 __**holdem**__
 Throws out cards from a 52-card deck. (Direct-message the bot to receive cards in secret.)
 The following subcommands are available:
