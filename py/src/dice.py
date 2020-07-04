@@ -139,8 +139,8 @@ def dice_drop(dice, n, high=False, keep=False):
     sdice = list(filter(lambda x: x[0] not in dice.dropped, sdice))
     # find n more to drop
     new_drops = [x[0] for x in sdice[:n]]
-
-    new_values.dropped += new_drops
+    
+    new_values.dropped.extend(new_drops)
     return new_values
 
 # The result of evaluating an expression, to be stored in a parse tree node
@@ -275,16 +275,16 @@ class CollectedValues(ExprResult):
 # such as `repeat()`.
 class MultiExpr(CollectedValues):
     def __init__(self, contents=[], copy_source=None):
-        if copy_source:
+        if copy_source != None:
             super().__init__(
-                items=copy_source.items,
-                dropped=copy_source.dropped,
-                added=copy_source.added)
+                items=copy_source.items.copy(),
+                dropped=copy_source.dropped.copy(),
+                added=copy_source.added.copy())
         else:
             super().__init__(items=contents)
             
     def __repr__(self):
-        return f"{self.get_remaining_count()} results"
+        return f"{self.get_remaining_count()} result(s)"
 
     def copy(self):
         return MultiExpr(copy_source=self)
@@ -338,7 +338,7 @@ class DiceValues(CollectedValues):
 
     # Override for joiner.
     def get_description(self):
-        return "(" + super().get_description(joiner="+") + ")"
+        return "(" + super().get_description(joiner="+") + ")=" + str(self.get_value())
 
     # Override to hide rolls.
     def get_unevaluated(self):
@@ -428,56 +428,44 @@ class Evaluator:
         def as_infix(self, evaluator, left):
             raise SyntaxError(f"Unexpected symbol: {self}")
 
-        # Recursively describe the expression, showing detailed dice roll
-        # information
-        # `breakout` means show the result of each dice rolled by
-        #     the 'd' operator, and strikethrough dropped.
-        # `predrop` helps format drop/keep operator, preventing the child
-        #     'd' operator from showing its breakout.
-        # `op_escape` when true will escape markdown around operator
-        #     characters. Should be False when formatting for a code block.
-        # `ex_ar` to expand intermediate arithmetic lacking dice rolls.
-        def describe(self, breakout=False, op_escape=True,
-                     ex_ar=False, predrop=False):
-            if self._kind == "repeat":
-                if predrop or (not breakout):
-                    return ExprResult.unevaluated(self.detail)
-                return ExprResult.description(self.detail)
-
-            if (not ex_ar) and (not self.contains_diceroll()):
-                if self.get_value() != None:
-                    return f"{self.get_value()}"
-
-            describe_first = self.first.describe(breakout, op_escape, ex_ar)\
-                if self.first != None else ""
-            describe_second = self.second.describe(breakout, op_escape, ex_ar)\
-                if self.second != None else ""
-
-            if (not predrop) and breakout and self.is_diceroll():
-                dice_breakout = " " + self.detail.get_description()
-                if self._kind == "d":
-                    if len(self.detail.get_all_items()) < 2:
-                        dice_breakout = ""
-                    dice_count = "" if self.second == None\
-                                    else describe_first
-                    dice_size = describe_first\
-                                    if self.second == None\
-                                    else describe_second
-                    return f"[{dice_count}d{dice_size}"+\
-                            f"{dice_breakout}={self.get_value()}]"
-                else:
-                    value_tail = str(self.get_value()) if self.get_value() else ""
-                    return f"[{self.first.describe(breakout, op_escape, ex_ar, predrop=True)}"+\
-                            f"{self._kind}{describe_second}"+\
-                            f"{dice_breakout}{value_tail}]"
-            
-            spacer = " " if self._spaces else ""
+        # Recursively describe this expression, showing dice breakouts and any
+        # intermediate operations including random choice.
+        # With uneval=True, describe as it was interpreted but not evaluated.
+        # This should resemble the original input, but with whitespace removed
+        # and possible parentheses inserted for clarity.
+        def describe(self, uneval=False, predrop=False):
+            describe_first = self.first.describe(uneval=uneval,
+                predrop=self.is_dropkeep())\
+                    if self.first != None else ""
+            describe_second = self.second.describe(uneval=uneval)\
+                    if self.second != None else ""
 
             if self._kind == "(": # parenthesis group
                 inner = describe_first
+                # skip showing parens if child is already parenthesized
                 if inner[len(inner)-1] != ")" and inner[0] != "(":
                     inner = "(" + inner + ")"
                 return inner
+
+            spacer = " " if self._spaces else ""
+            detail_description = ""
+            
+            if not uneval:
+                if (not self.is_collection()) and (not self.contains_diceroll()):
+                    # No child contains diceroll randomness, so just show the value
+                    return f"{self.get_value()}"
+                
+                if self._kind == "repeat" and (not predrop): # repeated expression
+                    return ExprResult.description(self.detail)
+
+                if self.detail:
+                    detail_description = " " + ExprResult.description(self.detail) if self.detail else ""
+                if self.is_diceroll():
+                    # hide details if parent drop/keep node already will show them
+                    if len(self.detail.get_all_items()) < 2:
+                        detail_description = "=" + str(self.detail.get_value())
+                    if predrop:
+                        detail_description = ""
 
             if self._function_like:
                 close_function = ")"
@@ -485,24 +473,31 @@ class Evaluator:
                     close_function = f",{spacer}{describe_second})"
                 return f"{self._kind}({describe_first}" + close_function
 
-            if self.first != None and self.second != None: # infix
-                op = self._kind
-                if op_escape:
-                    op = escape(op)
-                ext_predrop = predrop if self.is_dropkeep() else False
-                prewrap = f"{self.first.describe(breakout, op_escape, ex_ar, predrop=ext_predrop)}"+\
-                        f"{spacer}{op}{spacer}"+\
-                        f"{describe_second}"
-                if self._kind == "choose" or self._kind == "C":
-                    return "(" + prewrap + ")"
-                return prewrap
-            if self.first != None: # prefix or postfix, one child
-                child_describe = describe_first
+            left = describe_first
+            right = describe_second
+            if self.second == None:
+                # No operands, just describe this node's value.
+                if self.first == None:
+                    return str(self)
                 if self._postfix:
-                    return f"{child_describe}{spacer}{self._kind}"
-                return f"{self._kind}{spacer}{child_describe}"
-            else:
-                return f"{self}"
+                    right = ""
+                else:
+                    left = ""
+                    right = describe_first
+
+            op = self._kind
+            if not uneval:
+                op = escape(self._kind)
+
+            prewrap = f"{left}"+\
+                    f"{spacer}{op}{spacer}"+\
+                    f"{right}{detail_description}"
+
+            if self._kind == "choose" or self._kind == "C":
+                return "(" + prewrap + ")"
+            elif self.is_diceroll() and not (predrop or uneval):
+                return "[" + prewrap + "]"
+            return prewrap
 
         def __repr__(self):
             if self._kind == "NUMBER":
@@ -512,7 +507,7 @@ class Evaluator:
             return "<" + " ".join(out) + ">"
 
         def is_collection(self):
-            return is_diceroll() or self._kind == "repeat"
+            return self.is_diceroll() or self._kind == "repeat"
 
         def is_diceroll(self):
             return self._kind == "d" or self.is_dropkeep()
@@ -655,11 +650,9 @@ def format_roll_results(results):
         final_value = row.get_value()
         if final_value == None and row.detail != None:
             final_value = str(row.detail)
-        out += codeblock(row.describe(breakout=False,
-                                      op_escape=False,
-                                      ex_ar=True))+\
+        out += codeblock(row.describe(uneval=True))+\
                 f"=> **{final_value}**"+\
-                f"  |  {row.describe(breakout=True)}"
+                f"  |  {row.describe()}"
         out += "\n"
     return out
 
@@ -727,23 +720,23 @@ def _repeat_function(node, x, y, ev):
     if reps < 0:
         raise ValueError("Cannot repeat negative times")
     if reps == 0:
-        node.detail = MultiExpr([])
+        node.detail = MultiExpr()
         return
 
     flats = [FlatExpr(x.get_value(),
-                    x.describe(breakout=True),
-                    x.describe(ex_ar=True, op_escape=False))]
+                    x.describe(),
+                    x.describe(uneval=True))]
     redo_node = x
     for i in range(reps - 1):
         ev._jump_to(ev.token_list.index(node)+2) # skip function open paren
         redo_node = ev.expr()
         flats.append(FlatExpr(redo_node.get_value(),
-                            redo_node.describe(breakout=True),
-                            redo_node.describe(ex_ar=True, op_escape=False)))
+                            redo_node.describe(),
+                            redo_node.describe(uneval=True)))
     # jump forward past end of function parentheses
     ev._jump_to(exit_iter_pos)
 
-    node.detail = MultiExpr(flats)
+    node.detail = MultiExpr(contents=flats)
 
 def _number_nud(self, ev):
     return self

@@ -49,13 +49,15 @@ class DiceTest(unittest.TestCase):
         dice.roll("repeat(4d6kh3, 6)")
         dice.roll("repeat(3d6, 5)dl2")
         dice.roll("repeat(10d20-5d6, 10)kh3")
+        dice.roll("repeat(5d20kh3+sqrt(4*8), 10)")
+        dice.roll("repeat(repeat(4*3d8, 2), 3)")
 
     # Test that semicolons separate an input into multiple rolls.
     def test_breaks(self):
-        results = dice.roll("1+5d2;(2d9)*3!;15")
-        self.assertEqual(len(results), 3)
         results = dice.roll("1d20+5; 2d6+5")
         self.assertEqual(len(results), 2)
+        results = dice.roll("1+5d2;(2d9)*3!;15")
+        self.assertEqual(len(results), 3)
 
 if __name__ == '__main__':
     unittest.main()
