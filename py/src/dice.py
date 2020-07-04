@@ -1,7 +1,10 @@
 # Dicerolling.
 # Parser and evaluator for dice roll inputs.
 
-import collections, itertools, operator, re
+import collections
+import itertools
+import operator
+import re
 from functools import total_ordering
 from math import factorial, sqrt
 from random import randint
@@ -14,17 +17,18 @@ KEYWORDS = [
 ]
 KEYWORD_PATTERN = '|'.join(KEYWORDS)
 TOKEN_SPEC = [
-    ("NUMBER",   r"\d+(\.\d*)?"),    # Integer or decimal number
-    ("KEYWORD",  KEYWORD_PATTERN),   # Keywords
-    ("DICE",     r"[dk][hl]|[d]"),   # Diceroll operators
-    ("OP",       r"[+\-*×/÷%^()!]"), # Generic operators
-    ("SEP",      r"[,]"),            # Separators like commas
-    ("END",      r"[;\n]"),          # Line end / break characters
-    ("SKIP",     r"[ \t]+"),         # Skip over spaces and tabs
-    ("MISMATCH", r"."),              # Any other character
+    ("NUMBER",   r"\d+(\.\d*)?"),      # Integer or decimal number
+    ("KEYWORD",  KEYWORD_PATTERN),     # Keywords
+    ("DICE",     r"[dk][hl]|[d]"),     # Diceroll operators
+    ("OP",       r"[+\-*×/÷%^()!]"),   # Generic operators
+    ("SEP",      r"[,]"),              # Separators like commas
+    ("END",      r"[;\n]"),            # Line end / break characters
+    ("SKIP",     r"[ \t]+"),           # Skip over spaces and tabs
+    ("MISMATCH", r"."),                # Any other character
 ]
 TOKEN_PATTERN = re.compile(
     '|'.join(f"(?P<{pair[0]}>{pair[1]})" for pair in TOKEN_SPEC))
+
 
 # Cut input into tokens.
 # Based on tokenizer sample from the python docs.
@@ -32,7 +36,7 @@ TOKEN_PATTERN = re.compile(
 def tokenize(intext):
     tokens = []
     for item in TOKEN_PATTERN.finditer(intext):
-        kind = item.lastgroup # group name
+        kind = item.lastgroup  # group name
         value = item.group()
         if kind == "NUMBER":
             if '.' in value:
@@ -44,9 +48,10 @@ def tokenize(intext):
             continue
         elif kind == "MISMATCH":
             raise RuntimeError(f"Couldn't interpret <{value}> from: {intext}")
-        
+
         tokens.append(ProtoToken(kind, value))
     return tokens
+
 
 # Convert tokens to symbol instances and divide them into individual rolls.
 def symbolize(symbol_table, tokens):
@@ -56,7 +61,7 @@ def symbolize(symbol_table, tokens):
         symbol_id = pretoken.type
         if pretoken.type in ("OP", "DICE", "KEYWORD", "SEP"):
             symbol_id = pretoken.value
-        try: # look up symbol type
+        try:  # look up symbol type
             symbol = symbol_table[symbol_id]
         except KeyError:
             raise SyntaxError(
@@ -77,6 +82,7 @@ def symbolize(symbol_table, tokens):
         all_rolls.append(current_roll)
     return all_rolls
 
+
 def force_integral(value, description=""):
     if isinstance(value, int):
         return value
@@ -85,11 +91,13 @@ def force_integral(value, description=""):
     else:
         raise ValueError(f"Expected integer # {description}: {value}")
 
+
 def single_roll(size):
     if size == 0:
         return 0
     else:
         return randint(1, size)
+
 
 def dice_roll(count, size):
     rolls = []
@@ -109,6 +117,7 @@ def dice_roll(count, size):
 
     return DiceValues(size, negative, items=rolls)
 
+
 # Drop the highest or lowest value items from a collection.
 # Defaults to dropping the `n` lowest items.
 # `high` option means dropping high items.
@@ -123,7 +132,7 @@ def dice_drop(dice, n, high=False, keep=False):
         # if keeping dice, we're dropping a complementary dice.
         # if we've already dropped more than that, we don't need to drop more.
         n = dice.get_remaining_count() - n
-        if n < 0: # allow keeping more dice than are rolled (drop none)
+        if n < 0:  # allow keeping more dice than are rolled (drop none)
             n = 0
     if n < 0:
         raise ValueError(f"Can't drop negative # of items ({n})")
@@ -135,15 +144,16 @@ def dice_drop(dice, n, high=False, keep=False):
 
     # sort and pair with indices
     sdice = sorted(list(enumerate(dice.get_all_items())),
-                    key=lambda x:x[1],
-                    reverse=high^keep)
+                   key=lambda x: x[1],
+                   reverse=high ^ keep)
     # remove already dropped
     sdice = list(filter(lambda x: x[0] not in dice.dropped, sdice))
     # find n more to drop
     new_drops = [x[0] for x in sdice[:n]]
-    
+
     new_values.dropped.extend(new_drops)
     return new_values
+
 
 def dice_explode(dice, condition=None, max_explosion=1000):
     if not isinstance(dice, DiceValues):
@@ -172,13 +182,15 @@ def dice_explode(dice, condition=None, max_explosion=1000):
 
     new_values.items.extend(exploded)
     new_values.added.extend(exploded_indices)
-    return new_values 
+    return new_values
+
 
 # The result of evaluating an expression, to be stored in a parse tree node
 # which required computation or collection. This is for operations with
 # complexity that cannot be represented by formatting just the operator and
 # operands.
 class ExprResult:
+
     # repr will be how this expression's final result will be shown
     def __repr__(self):
         return f"{self.get_value()}"
@@ -190,6 +202,7 @@ class ExprResult:
         if isinstance(item, ExprResult):
             return item.get_value()
         return item
+
     @staticmethod
     def description(item):
         if isinstance(item, ExprResult):
@@ -204,28 +217,35 @@ class ExprResult:
     def get_description(self):
         raise NotImplementedError("Description missing for this expression.")
 
+
 # Represents an expression which resolved to a single value,
 # storing only the final value and description strings.
 @total_ordering
 class FlatExpr(ExprResult):
+
     def __init__(self, value, description, unevaluated):
         self.value = value
         self.description = description
         self.unevaluated = unevaluated
-    # Overrides.
+
     def get_value(self):
         return self.value
+
     def get_description(self):
         return self.description
+
     def __eq__(self, other):
         return self.value == ExprResult.value(other)
+
     def __lt__(self, other):
         return self.value < ExprResult.value(other)
+
 
 # For representing an expression which evaluated to a collection from which items
 # could have been added to or dropped from.
 # Items are expected to be repr'able, either a literal value or ExprResult
 class CollectedValues(ExprResult):
+
     def __init__(self, items=None, dropped=None, added=None):
         super().__init__()
         # dropped and added are lists of item indices, not items themselves
@@ -252,7 +272,7 @@ class CollectedValues(ExprResult):
             base = f"_{base}_"
         return base
 
-    # Override.
+    # Override to list collection contents.
     def get_description(self, joiner=", "):
         out = joiner.join(
             [self.format_item(ExprResult.description(self.items[i]), i)
@@ -284,9 +304,11 @@ class CollectedValues(ExprResult):
             return 0
         return self.aggregate(func)[-1]
 
+
 # Represents several expressions' results collected together by one operator,
 # such as `repeat()`.
 class MultiExpr(CollectedValues):
+
     def __init__(self, contents=None, copy_source=None):
         if copy_source != None:
             super().__init__(
@@ -314,7 +336,9 @@ class MultiExpr(CollectedValues):
                 for i in range(len(self.items))])
         return out + "\n]"
 
+
 class DiceValues(CollectedValues):
+
     def __init__(self, dice_size, negated=False,
                  items=None, dropped=None, added=None):
         super().__init__(items, dropped, added)
@@ -322,7 +346,7 @@ class DiceValues(CollectedValues):
         self.negated = negated
 
     def copy(self):
-        return DiceValues(self.dice_size, self.negated, 
+        return DiceValues(self.dice_size, self.negated,
                           self.items.copy(),
                           self.dropped.copy(),
                           self.added.copy())
@@ -330,34 +354,38 @@ class DiceValues(CollectedValues):
     def get_value(self):
         return super().get_value() * (-1 if self.negated else 1)
 
-    # Override for joiner.
+    # Override to wrap and use `+` to join.
     def get_description(self):
         return "(" + super().get_description(joiner="+") + ")=" + str(self.get_value())
 
     def get_dice_size(self):
         return self.dice_size
 
+
 # The result of a conditional filter applied to collected values, conceptually
 # some number of dice rolls that successful meet some operator's condition.
 # Total value is evaluated to the number of non-dropped items remaining.
 class SuccessValues(CollectedValues):
+
     def __init__(self, comparison,
                  items=None, dropped=None, added=None):
         super().__init__(items, dropped, added)
-        self.comparison = comparison    # A string representing the filter used to determine success.
-        
+        # A string representing the filter used to determine success.
+        self.comparison = comparison
+
     def copy(self):
         return SuccessValues(self.comparison,
-                            self.items.copy(),
-                            self.dropped.copy(),
-                            self.added.copy())
+                             self.items.copy(),
+                             self.dropped.copy(),
+                             self.added.copy())
 
     def get_value(self):
         return self.get_remaining_count()
 
     def get_description(self):
-        return "(" + super().get_description(joiner=",")\
-                + ")" + self.comparison + str(self.get_value())
+        return "(" + super().get_description()\
+            + ")" + self.comparison + str(self.get_value())
+
 
 # Based on Pratt top-down operator precedence.
 # http://effbot.org/zone/simple-top-down-parsing.htm
@@ -399,7 +427,7 @@ class Evaluator:
 
     # Syntax tree base class
     class _Symbol:
-        # token type. 
+        # token type.
         _kind = None
         # operator binding power, 0 for literals.
         bp = 0
@@ -444,33 +472,38 @@ class Evaluator:
         # and possible parentheses inserted for clarity.
         def describe(self, uneval=False, predrop=False):
             describe_first = self.first.describe(uneval=uneval,
-                predrop=(self.is_dropkeepadd() or (predrop and self.is_collection())))\
-                    if self.first != None else ""
+                                                 predrop=(self.is_dropkeepadd() or (predrop and self.is_collection())))\
+                if self.first != None else ""
             describe_second = self.second.describe(uneval=uneval)\
-                    if self.second != None else ""
+                if self.second != None else ""
 
-            if self._kind == "(": # parenthesis group
+            if self._kind == "(":  # parenthesis group
                 inner = describe_first
                 # skip showing parens if child is already parenthesized
-                if inner[len(inner)-1] != ")" and inner[0] != "(":
+                if inner[len(inner) - 1] != ")" and inner[0] != "(":
                     inner = "(" + inner + ")"
                 return inner
 
             spacer = " " if self._spaces else ""
             detail_description = ""
-            
+
             if not uneval:
                 if (not self.is_collection()) and (not self.contains_diceroll()):
-                    # No child contains diceroll randomness, so just show the value
+                    # No child contains diceroll randomness, so just show the
+                    # value
                     return f"{self.get_value()}"
-                
-                if self._kind == "repeat" and (not predrop): # repeated expression
+
+                # repeated expression
+                if self._kind == "repeat" and (not predrop):
                     return ExprResult.description(self.detail)
 
                 if self.detail:
-                    detail_description = " " + ExprResult.description(self.detail) if self.detail else ""
+                    detail_description = " " + \
+                        ExprResult.description(
+                            self.detail) if self.detail else ""
                 if self.is_diceroll():
-                    # hide details if parent drop/keep node already will show them
+                    # hide details if parent drop/keep node already will show
+                    # them
                     if len(self.detail.get_all_items()) < 2:
                         detail_description = "=" + str(self.detail.get_value())
                     if predrop:
@@ -498,9 +531,8 @@ class Evaluator:
             if not uneval:
                 op = escape(self._kind)
 
-            prewrap = f"{left}"+\
-                    f"{spacer}{op}{spacer}"+\
-                    f"{right}{detail_description}"
+            prewrap = f"{left}{spacer}{op}{spacer}{right}" +\
+                f"{detail_description}"
 
             if self._kind == "choose" or self._kind == "C":
                 return "(" + prewrap + ")"
@@ -557,7 +589,6 @@ class Evaluator:
             s.__qualname__ = "symbol-" + symbol_kind
             s._kind = symbol_kind
             s.bp = bind_power
-            # print(f"set bp of {s._kind} to {s.bp}")
             Evaluator.SYMBOL_TABLE[symbol_kind] = s
         else:
             s.bp = max(bind_power, s.bp)
@@ -570,7 +601,7 @@ class Evaluator:
             self.second = None
             func(self, self.first)
             return self
-        s = Evaluator.register_symbol(kind) # don't assign to bp for prefix
+        s = Evaluator.register_symbol(kind)  # don't assign to bp for prefix
         s.as_prefix = _as_prefix
         return s
 
@@ -642,6 +673,7 @@ class Evaluator:
             raise SyntaxError("Parse error: missing operators?")
         return ret
 
+
 def roll(intext):
     if len(intext) < 1:
         raise ValueError("Nothingness rolls eternal.")
@@ -653,59 +685,75 @@ def roll(intext):
         results.append(e.evaluate())
     return results
 
+
 def format_roll_results(results):
     out = ""
     for row in results:
         final_value = row.get_value()
         if final_value == None and row.detail != None:
             final_value = str(row.detail)
-        out += codeblock(row.describe(uneval=True))+\
-                f"=> **{final_value}**"+\
-                f"  |  {row.describe()}"
+        out += codeblock(row.describe(uneval=True)) +\
+            f"=> **{final_value}**" +\
+            f"  |  {row.describe()}"
         out += "\n"
     return out
+
 
 def _dice_operator(node, x, y):
     node.detail = dice_roll(x.get_value(), y.get_value())
 
+
 def _dice_operator_prefix(node, x):
     node.detail = dice_roll(1, x.get_value())
+
 
 def _drop_low_operator(node, x, y):
     node.detail = dice_drop(x.detail, y.get_value())
 
+
 def _drop_high_operator(node, x, y):
     node.detail = dice_drop(x.detail, y.get_value(), high=True)
+
 
 def _keep_low_operator(node, x, y):
     node.detail = dice_drop(x.detail, y.get_value(), high=False, keep=True)
 
+
 def _keep_high_operator(node, x, y):
     node.detail = dice_drop(x.detail, y.get_value(), high=True, keep=True)
 
+
 def _add_operator(node, x, y):
-    node._value = x.get_value()+y.get_value()
+    node._value = x.get_value() + y.get_value()
+
 
 def _subtract_operator(node, x, y):
-    node._value = x.get_value()-y.get_value()
+    node._value = x.get_value() - y.get_value()
+
 
 def _negate_operator(node, x):
     node._value = -x.get_value()
 
+
 def _mult_operator(node, x, y):
-    node._value = x.get_value()*y.get_value()
+    node._value = x.get_value() * y.get_value()
+
 
 def _div_operator(node, x, y):
-    node._value = x.get_value()/y.get_value()
+    node._value = x.get_value() / y.get_value()
+
 
 def _pow_operator(node, x, y):
     node._value = x.get_value() ** y.get_value()
 
+
 def _factorial_operator(node, x):
     node._value = factorial(x.get_value())
 
+
 def _dice_explode_operator(node, x):
     node.detail = dice_explode(x.detail)
+
 
 def _choose_operator(node, x, y):
     n = force_integral(x.get_value(), "choice operand")
@@ -719,15 +767,18 @@ def _choose_operator(node, x, y):
         if node._value.is_integer():
             node._value = int(node._value)
 
+
 def _sqrt_operator(node, x):
     node._value = sqrt(x.get_value())
+
 
 def _remainder_operator(node, x, y):
     node._value = x.get_value() % y.get_value()
 
+
 def _repeat_function(node, x, y, ev):
     exit_iter_pos = ev.iter_pos
-    
+
     reps = force_integral(y.get_value(), "repetitions")
     if reps < 0:
         raise ValueError("Cannot repeat negative times")
@@ -736,22 +787,24 @@ def _repeat_function(node, x, y, ev):
         return
 
     flats = [FlatExpr(x.get_value(),
-                    x.describe(),
-                    x.describe(uneval=True))]
+                      x.describe(),
+                      x.describe(uneval=True))]
     redo_node = x
     for i in range(reps - 1):
-        ev._jump_to(ev.token_list.index(node)+2) # skip function open paren
+        ev._jump_to(ev.token_list.index(node) + 2)  # skip function open paren
         redo_node = ev.expr()
         flats.append(FlatExpr(redo_node.get_value(),
-                            redo_node.describe(),
-                            redo_node.describe(uneval=True)))
+                              redo_node.describe(),
+                              redo_node.describe(uneval=True)))
     # jump forward past end of function parentheses
     ev._jump_to(exit_iter_pos)
 
     node.detail = MultiExpr(contents=flats)
 
+
 def _number_nud(self, ev):
     return self
+
 
 def _left_paren_nud(self, ev):
     self.first = ev.expr()
@@ -798,9 +851,9 @@ if __name__ == "__main__":
         try:
             results = roll(intext)
             print(format_roll_results(results))
-        except (ArithmeticError, 
-                ValueError, 
-                RuntimeError, 
-                StopIteration, 
+        except (ArithmeticError,
+                ValueError,
+                RuntimeError,
+                StopIteration,
                 SyntaxError) as err:
             print(f"{err}")

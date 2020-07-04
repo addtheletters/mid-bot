@@ -11,9 +11,11 @@ SMALL_JOKER_SUIT = 1
 JOKER_NUMBER = 15
 JOKER_NUMBER_CHAR = 'joker'
 
+
 @total_ordering
 class Card(namedtuple("CardId", ["n", "s"])):
-    NUMBERS = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
+    NUMBERS = ['2', '3', '4', '5', '6', '7',
+               '8', '9', '10', 'J', 'Q', 'K', 'A']
     SUITS = ['♣', '♦', '♥', '♠']
     SPECIAL = {
         (JOKER_NUMBER, 1): "SMALL_JOKER",
@@ -22,8 +24,8 @@ class Card(namedtuple("CardId", ["n", "s"])):
 
     def is_valid(self):
         if self.n < 0 or self.s < 0\
-            or ((self.n >= len(Card.NUMBERS)\
-                or self.s >= len(Card.SUITS))\
+            or ((self.n >= len(Card.NUMBERS)
+                 or self.s >= len(Card.SUITS))
                 and (self.n, self.s) not in Card.SPECIAL):
             return False
         return True
@@ -66,6 +68,7 @@ class Card(namedtuple("CardId", ["n", "s"])):
     def small_joker():
         return Card(JOKER_NUMBER, SMALL_JOKER_SUIT)
 
+
 def build_deck_52():
     deck = []
     for suit in range(len(Card.SUITS)):
@@ -73,15 +76,18 @@ def build_deck_52():
             deck.append(Card(num, suit))
     return deck
 
+
 def build_deck_54():
     deck = build_deck_52()
     deck.append(Card.big_joker())
     deck.append(Card.small_joker())
     return deck
 
+
 def shuffle(deck):
     random.shuffle(deck)
     return deck
+
 
 def draw(deck, count=1):
     drawn = []
