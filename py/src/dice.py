@@ -1,7 +1,8 @@
 # Dicerolling.
 # Parser and evaluator for dice roll inputs.
 
-import collections, re
+import collections, itertools, operator, re
+from functools import total_ordering
 from math import factorial, sqrt
 from random import randint
 from utils import escape, codeblock
@@ -9,18 +10,18 @@ from utils import escape, codeblock
 ProtoToken = collections.namedtuple("ProtoToken", ["type", "value"])
 
 KEYWORDS = [
-    "C", "choose", "repeat", "sqrt",
+    "C", "choose", "repeat", "sqrt", "fact",
 ]
 KEYWORD_PATTERN = '|'.join(KEYWORDS)
 TOKEN_SPEC = [
-    ("NUMBER",   r"\d+(\.\d*)?"),  # Integer or decimal number
-    ("KEYWORD",  KEYWORD_PATTERN), # Keywords
-    ("DICE",     r"[dk][hl]|[d]"), # Diceroll operators
-    ("OP",       r"[+\-*/%^()!]"), # Generic operators
-    ("SEP",      r"[,]"),          # Separators like commas
-    ("END",      r"[;\n]"),        # Line end / break characters
-    ("SKIP",     r"[ \t]+"),       # Skip over spaces and tabs
-    ("MISMATCH", r"."),            # Any other character
+    ("NUMBER",   r"\d+(\.\d*)?"),    # Integer or decimal number
+    ("KEYWORD",  KEYWORD_PATTERN),   # Keywords
+    ("DICE",     r"[dk][hl]|[d]"),   # Diceroll operators
+    ("OP",       r"[+\-*×/÷%^()!]"), # Generic operators
+    ("SEP",      r"[,]"),            # Separators like commas
+    ("END",      r"[;\n]"),          # Line end / break characters
+    ("SKIP",     r"[ \t]+"),         # Skip over spaces and tabs
+    ("MISMATCH", r"."),              # Any other character
 ]
 TOKEN_PATTERN = re.compile(
     '|'.join(f"(?P<{pair[0]}>{pair[1]})" for pair in TOKEN_SPEC))
@@ -63,7 +64,7 @@ def symbolize(symbol_table, tokens):
 
         token = symbol()
         if pretoken.type == "NUMBER":
-            token.value = pretoken.value
+            token._value = pretoken.value
         current_roll.append(token)
 
         if pretoken.type == "END":
@@ -76,27 +77,6 @@ def symbolize(symbol_table, tokens):
         all_rolls.append(current_roll)
     return all_rolls
 
-class DiceResult(collections.namedtuple("DiceResult",
-        ["count", "size", "total", "rolls", "negative", "dropped"])):
-    def breakout(self):
-        drops_striked = format_dropped(self.rolls, self.dropped)
-        return f"({'+'.join(drops_striked)})"
-    def negated(self):
-        return f"{'-' if self.negative else ''}"
-    def base_roll(self):
-        return f"{self.count}d{self.size}"
-    def __repr__(self):
-        return self.base_roll()
-
-def format_dropped(rolls, dropped):
-    results = []
-    for i in range(len(rolls)):
-        if i in dropped:
-            results.append(f"~~{rolls[i]}~~")
-        else:
-            results.append(f"{rolls[i]}")
-    return results
-
 def force_integral(value, description=""):
     if isinstance(value, int):
         return value
@@ -104,6 +84,12 @@ def force_integral(value, description=""):
         return int(value)
     else:
         raise ValueError(f"Expected integer # {description}: {value}")
+
+def single_roll(size):
+    if size == 0:
+        return 0
+    else:
+        return randint(1, size)
 
 def dice_roll(count, size):
     rolls = []
@@ -118,98 +104,287 @@ def dice_roll(count, size):
         count = -count
         negative = True
 
-    if size == 0:
-        for i in range(count):
-            rolls.append(0)
-    else:
-        for i in range(count):
-            rolls.append(randint(1, size))
-    total = -sum(rolls) if negative else sum(rolls)
-    return DiceResult(count, size, total, rolls, negative, [])
+    for i in range(count):
+        rolls.append(single_roll(size))
 
-# Drop some dice from a roll and update its total.
-# Defaults to dropping the `n` lowest dice.
-# `high` option means dropping high dice.
-# `keep` option means keeping `n` dice and dropping the rest.
+    return DiceValues(size, negative, items=rolls)
+
+# Drop the highest or lowest value items from a collection.
+# Defaults to dropping the `n` lowest items.
+# `high` option means dropping high items.
+# `keep` option means keeping `n` items and dropping the rest.
 def dice_drop(dice, n, high=False, keep=False):
-    if not isinstance(dice, DiceResult):
-        raise SyntaxError(f"Can't drop/keep (operand not a dice roll)")
-    n = force_integral(n, "dice to drop")
+    if not isinstance(dice, CollectedValues):
+        raise SyntaxError(f"Can't drop/keep (operand not a collection)")
+    n = force_integral(n, "items to drop")
     if keep:
         if n < 0:
-            raise ValueError(f"Can't keep negative dice ({n})")
+            raise ValueError(f"Can't keep negative # of items ({n})")
         # if keeping dice, we're dropping a complementary dice.
         # if we've already dropped more than that, we don't need to drop more.
-        n = dice.count - len(dice.dropped) - n
+        n = dice.get_remaining_count() - n
         if n < 0: # allow keeping more dice than are rolled (drop none)
             n = 0
     if n < 0:
-        raise ValueError(f"Can't drop negative dice ({n})")
+        raise ValueError(f"Can't drop negative # of items ({n})")
+
+    new_values = dice.copy()
     if n == 0:
-        return DiceResult(
-            dice.count, dice.size, dice.total, dice.rolls, dice.negative,
-            dice.dropped)
+        # nothing to drop
+        return new_values
 
     # sort and pair with indices
-    sdice = sorted(list(enumerate(dice.rolls)),
+    sdice = sorted(list(enumerate(dice.get_all_items())),
                     key=lambda x:x[1],
                     reverse=high^keep)
-
     # remove already dropped
     sdice = list(filter(lambda x: x[0] not in dice.dropped, sdice))
-
-    # drop n more dice
+    # find n more to drop
     new_drops = [x[0] for x in sdice[:n]]
-    dropped = dice.dropped + new_drops
-    total = 0
-    for i in range(len(dice.rolls)):
-        if i not in dropped:
-            total += dice.rolls[i]
-    if dice.negative:
-        total = -total
+    
+    new_values.dropped.extend(new_drops)
+    return new_values
 
-    return DiceResult(
-        dice.count, dice.size, total, dice.rolls, dice.negative, dropped)
+def dice_explode(dice, condition=None, max_explosion=1000):
+    if not isinstance(dice, DiceValues):
+        raise SyntaxError(f"Can't explode (not dice)")
+    if condition == None:
+        condition = lambda x: (x >= dice.dice_size)
 
-class FlatExpression(collections.namedtuple("FlatExpression",
-        ["value", "detail", "unevaluated", "breakout"])):
+    new_values = dice.copy()
+    rolls = new_values.get_all_items()
+
+    exploded = []
+    exploded_indices = []
+    for i in range(len(rolls)):
+        if i in dice.dropped:
+            continue
+        if condition(rolls[i]) and len(exploded) < max_explosion:
+            exploded_indices.append(len(rolls) + len(exploded))
+            exploded.append(single_roll(dice.dice_size))
+
+    i = 0
+    while i < len(exploded) and len(exploded) < max_explosion:
+        if condition(exploded[i]):
+            exploded_indices.append(len(rolls) + len(exploded))
+            exploded.append(single_roll(dice.dice_size))
+        i += 1
+
+    new_values.items.extend(exploded)
+    new_values.added.extend(exploded_indices)
+    return new_values 
+
+# The result of evaluating an expression, to be stored in a parse tree node
+# which required computation or collection. This is for operations with
+# complexity that cannot be represented by formatting just the operator and
+# operands.
+class ExprResult:
+    # repr will be how this expression's final result will be shown
     def __repr__(self):
-        return self.breakout
+        return f"{self.get_value()}"
 
-class MultiExpression:
-    def __init__(self, contents):
-        self.contents = contents
+    # Helpers allowing literal values and ExprResult instances to be handled
+    # by a single code path
+    @staticmethod
+    def value(item):
+        if isinstance(item, ExprResult):
+            return item.get_value()
+        return item
+    @staticmethod
+    def description(item):
+        if isinstance(item, ExprResult):
+            return item.get_description()
+        return f"{item}"
+    @staticmethod
+    def unevaluated(item):
+        if isinstance(item, ExprResult):
+            return item.get_unevaluated()
+        return f"{item}"
+
+    # Numerical value for this expression.
+    def get_value(self):
+        raise NotImplementedError("Value missing for this expression.")
+
+    # String description of how this expression was evaluated.
+    def get_description(self):
+        raise NotImplementedError("Description missing for this expression.")
+
+    # String representing the state of the expression before any evaluation was done.
+    def get_unevaluated(self):
+        raise NotImplementedError("Expression missing unevaluated state.")
+
+# Represents an expression which resolved to a single value,
+# storing only the final value and description strings.
+@total_ordering
+class FlatExpr(ExprResult):
+    def __init__(self, value, description, unevaluated):
+        self.value = value
+        self.description = description
+        self.unevaluated = unevaluated
+    # Overrides.
+    def get_value(self):
+        return self.value
+    def get_description(self):
+        return self.description
+    def get_unevaluated(self):
+        return self.unevaluated
+    def __eq__(self, other):
+        return self.value == ExprResult.value(other)
+    def __lt__(self, other):
+        return self.value < ExprResult.value(other)
+
+# For representing an expression which evaluated to a collection from which items
+# could have been added to or dropped from.
+# Items are expected to be repr'able, either a literal value or ExprResult
+class CollectedValues(ExprResult):
+    def __init__(self, items=None, dropped=None, added=None):
+        super().__init__()
+        # dropped and added are lists of item indices, not items themselves
+        self.items = items if items else []
+        self.dropped = dropped if dropped else []
+        self.added = added if added else []
 
     def __repr__(self):
-        return f"{len(self.contents)} results"
+        return f"[{len(self.items)} results]"
 
-    def unevaluated(self):
-        if len(self.contents) < 0:
-            return "[empty MultiExpression]"
+    def copy(self):
+        return CollectedValues(self.items.copy(),
+                               self.dropped.copy(),
+                               self.added.copy())
+
+    # Override. Default to returning the sum of non-dropped items.
+    def get_value(self):
+        return self.total()
+
+    def format_item(self, base, index):
+        if index in self.dropped:
+            base = f"~~{base}~~"
+        if index in self.added:
+            base = f"_{base}_"
+        return base
+
+    # Override.
+    def get_description(self, joiner=", "):
+        out = joiner.join(
+            [self.format_item(ExprResult.description(self.items[i]), i)
+                for i in range(len(self.items))])
+        return out
+
+    # Override.
+    def get_unevaluated(self, joiner=", "):
+        out = joiner.join(
+            [self.format_item(ExprResult.unevaluated(self.items[i]), i)
+                for i in range(len(self.items))])
+        return out
+
+    # Returns all items, including dropped ones.
+    def get_all_items(self):
+        return self.items
+
+    # Exclude dropped items.
+    def get_remaining(self):
+        remaining = []
+        for i in range(len(self.items)):
+            if i not in self.dropped:
+                remaining.append(self.items[i])
+        return remaining
+
+    def get_remaining_count(self):
+        return len(self.items) - len(self.dropped)
+
+    # Aggregate together non-dropped items.
+    def aggregate(self, func=None):
+        values = self.get_remaining()
+        return list(itertools.accumulate(values, func))
+
+    def total(self, func=None):
+        if self.get_remaining_count() < 1:
+            return 0
+        return self.aggregate(func)[-1]
+
+# Represents several expressions' results collected together by one operator,
+# such as `repeat()`.
+class MultiExpr(CollectedValues):
+    def __init__(self, contents=None, copy_source=None):
+        if copy_source != None:
+            super().__init__(
+                items=copy_source.items.copy(),
+                dropped=copy_source.dropped.copy(),
+                added=copy_source.added.copy())
+        else:
+            super().__init__(items=contents)
+
+    def __repr__(self):
+        return f"{self.get_remaining_count()} result(s)"
+
+    def copy(self):
+        return MultiExpr(copy_source=self)
+
+    def get_value(self):
+        if self.get_remaining_count() == 1:
+            return self.get_remaining()[0].get_value()
+        return str(self)
+
+    def get_description(self, joiner="\n"):
+        out = "[\n"
+        out += joiner.join(
+            [self.format_item(f"**{ExprResult.value(self.items[i])}**  |  {ExprResult.description(self.items[i])}", i)
+                for i in range(len(self.items))])
+        return out + "\n]"
+
+    def get_unevaluated(self):
+        if len(self.get_all_items()) < 0:
+            return "[empty MultiExpr]"
 
         all_identical = True
-        first = self.contents[0]
-        for other in self.contents[1:]:
-            if first.unevaluated != other.unevaluated:
+        first = self.items[0]
+        for other in self.items[1:]:
+            if ExprResult.unevaluated(first) != ExprResult.unevaluated(other):
                 all_identical = False
                 break
 
         if all_identical:
-            return f"[{len(self.contents)} repeats of: {first.unevaluated}]"
+            return f"[{len(self.get_all_items())} repeats of: {ExprResult.unevaluated(first)}]"
 
         out = "["
-        for item in self.contents:
-            out += f"{item.unevaluated}, "
+        for item in self.items:
+            out += f"{ExprResult.unevaluated(item)}, "
         out = out[:-2]
         out += "]"
         return out
 
-    def breakout(self, nesting=1):
-        out = "[\n"
-        for item in self.contents:
-            out += "    " * nesting
-            out += f"**{item.value}**  |  {item}\n"
-        return out + "]"
+class DiceValues(CollectedValues):
+    def __init__(self, dice_size, negated=False,
+                 items=None, dropped=None, added=None):
+        super().__init__(items, dropped, added)
+        self.dice_size = dice_size
+        self.negated = negated
+
+    def copy(self):
+        return DiceValues(self.dice_size, self.negated, 
+                          self.items.copy(),
+                          self.dropped.copy(),
+                          self.added.copy())
+
+    def get_value(self):
+        return super().get_value() * (-1 if self.negated else 1)
+
+    # Override for joiner.
+    def get_description(self):
+        return "(" + super().get_description(joiner="+") + ")=" + str(self.get_value())
+
+    # Override to hide rolls.
+    def get_unevaluated(self):
+        return ""
+
+    def get_dice_size(self):
+        return self.dice_size
+
+    def get_base_roll_description(self):
+        return f"{self.get_remaining_count()-len(self.added)}d{self.get_dice_size()}"
+
+class SuccessValues(DiceValues):
+    def __init__(self, dice_)
 
 # Based on Pratt top-down operator precedence.
 # http://effbot.org/zone/simple-top-down-parsing.htm
@@ -264,14 +439,21 @@ class Evaluator:
         _spaces = False
 
         def __init__(self):
-            # literal value or computation result
-            self.value = None
+            # numerical literal or resolved computation value
+            self._value = None
             # detailed info on operator computation such as dice resolution
             self.detail = None
 
             # parse tree links
             self.first = None
             self.second = None
+
+        def get_value(self):
+            if self._value != None:
+                return self._value
+            if self.detail != None:
+                return ExprResult.value(self.detail)
+            return None
 
         # Null denotation: value for literals, prefix behavior for operators.
         def as_prefix(self, evaluator):
@@ -282,55 +464,44 @@ class Evaluator:
         def as_infix(self, evaluator, left):
             raise SyntaxError(f"Unexpected symbol: {self}")
 
-        # Recursively describe the expression, showing detailed dice roll
-        # information
-        # `breakout` means show the result of each dice rolled by
-        #     the 'd' operator, and strikethrough dropped.
-        # `predrop` helps format drop/keep operator, preventing the child
-        #     'd' operator from showing its breakout.
-        # `op_escape` when true will escape markdown around operator
-        #     characters. Should be False when formatting for a code block.
-        # `ex_ar` to expand intermediate arithmetic lacking dice rolls.
-        def describe(self, breakout=False, op_escape=True,
-                     ex_ar=False, predrop=False):
-            if self._kind == "repeat":
-                if not breakout:
-                    return self.detail.unevaluated()
-                return self.detail.breakout()
-
-            if (not ex_ar) and (not self.contains_diceroll()):
-                if self.value != None:
-                    return f"{self.value}"
-
-            describe_first = self.first.describe(breakout, op_escape, ex_ar)\
-                if self.first != None else ""
-            describe_second = self.second.describe(breakout, op_escape, ex_ar)\
-                if self.second != None else ""
-
-            if (not predrop) and breakout and self.is_diceroll():
-                dice_breakout = " " + self.detail.breakout()
-                if self._kind == "d":
-                    if self.detail.count < 2:
-                        dice_breakout = ""
-                    dice_count = "" if self.second == None\
-                                    else describe_first
-                    dice_size = describe_first\
-                                    if self.second == None\
-                                    else describe_second
-                    return f"[{dice_count}d{dice_size}"+\
-                            f"{dice_breakout}={self.value}]"
-                else:
-                    return f"[{self.first.describe(breakout, op_escape, ex_ar, predrop=True)}"+\
-                            f"{self._kind}{describe_second}"+\
-                            f"{dice_breakout}={self.value}]"
-            
-            spacer = " " if self._spaces else ""
+        # Recursively describe this expression, showing dice breakouts and any
+        # intermediate operations including random choice.
+        # With uneval=True, describe as it was interpreted but not evaluated.
+        # This should resemble the original input, but with whitespace removed
+        # and possible parentheses inserted for clarity.
+        def describe(self, uneval=False, predrop=False):
+            describe_first = self.first.describe(uneval=uneval,
+                predrop=self.is_dropkeepadd())\
+                    if self.first != None else ""
+            describe_second = self.second.describe(uneval=uneval)\
+                    if self.second != None else ""
 
             if self._kind == "(": # parenthesis group
                 inner = describe_first
+                # skip showing parens if child is already parenthesized
                 if inner[len(inner)-1] != ")" and inner[0] != "(":
                     inner = "(" + inner + ")"
                 return inner
+
+            spacer = " " if self._spaces else ""
+            detail_description = ""
+            
+            if not uneval:
+                if (not self.is_collection()) and (not self.contains_diceroll()):
+                    # No child contains diceroll randomness, so just show the value
+                    return f"{self.get_value()}"
+                
+                if self._kind == "repeat" and (not predrop): # repeated expression
+                    return ExprResult.description(self.detail)
+
+                if self.detail:
+                    detail_description = " " + ExprResult.description(self.detail) if self.detail else ""
+                if self.is_diceroll():
+                    # hide details if parent drop/keep node already will show them
+                    if len(self.detail.get_all_items()) < 2:
+                        detail_description = "=" + str(self.detail.get_value())
+                    if predrop:
+                        detail_description = ""
 
             if self._function_like:
                 close_function = ")"
@@ -338,37 +509,47 @@ class Evaluator:
                     close_function = f",{spacer}{describe_second})"
                 return f"{self._kind}({describe_first}" + close_function
 
-            if self.first != None and self.second != None: # infix
-                op = self._kind
-                if op_escape:
-                    op = escape(op)
-                ext_predrop = predrop if self.is_dropkeep() else False
-                prewrap = f"{self.first.describe(breakout, op_escape, ex_ar, predrop=ext_predrop)}"+\
-                        f"{spacer}{op}{spacer}"+\
-                        f"{describe_second}"
-                if self._kind == "choose" or self._kind == "C":
-                    return "(" + prewrap + ")"
-                return prewrap
-            if self.first != None: # prefix or postfix, one child
-                child_describe = describe_first
+            left = describe_first
+            right = describe_second
+            if self.second == None:
+                # No operands, just describe this node's value.
+                if self.first == None:
+                    return str(self)
                 if self._postfix:
-                    return f"{child_describe}{spacer}{self._kind}"
-                return f"{self._kind}{spacer}{child_describe}"
-            else:
-                return f"{self}"
+                    right = ""
+                else:
+                    left = ""
+                    right = describe_first
+
+            op = self._kind
+            if not uneval:
+                op = escape(self._kind)
+
+            prewrap = f"{left}"+\
+                    f"{spacer}{op}{spacer}"+\
+                    f"{right}{detail_description}"
+
+            if self._kind == "choose" or self._kind == "C":
+                return "(" + prewrap + ")"
+            elif self.is_diceroll() and not (predrop or uneval):
+                return "[" + prewrap + "]"
+            return prewrap
 
         def __repr__(self):
             if self._kind == "NUMBER":
-                return f"{self.value}"
+                return f"{self._value}"
             out = [self._kind, self.first, self.second]
             out = map(str, filter(None, out))
             return "<" + " ".join(out) + ">"
 
-        def is_diceroll(self):
-            return self._kind == "d" or self.is_dropkeep()
+        def is_collection(self):
+            return self.is_diceroll() or self._kind == "repeat"
 
-        def is_dropkeep(self):
-            return self._kind in ("dl", "dh", "kl", "kh")
+        def is_diceroll(self):
+            return self._kind == "d" or self.is_dropkeepadd()
+
+        def is_dropkeepadd(self):
+            return self._kind in ("dl", "dh", "kl", "kh", "!")
 
         # Is this node dice, or does any node in this subtree have dice?
         def contains_diceroll(self):
@@ -502,113 +683,106 @@ def roll(intext):
 def format_roll_results(results):
     out = ""
     for row in results:
-        out += codeblock(row.describe(breakout=False,
-                                      op_escape=False,
-                                      ex_ar=True))+\
-                f"=> **{row.value}**"+\
-                f"  |  {row.describe(breakout=True)}"
+        final_value = row.get_value()
+        if final_value == None and row.detail != None:
+            final_value = str(row.detail)
+        out += codeblock(row.describe(uneval=True))+\
+                f"=> **{final_value}**"+\
+                f"  |  {row.describe()}"
         out += "\n"
     return out
 
 def _dice_operator(node, x, y):
-    node.detail = dice_roll(x.value, y.value)
-    node.value = node.detail.total
+    node.detail = dice_roll(x.get_value(), y.get_value())
 
 def _dice_operator_prefix(node, x):
-    node.detail = dice_roll(1, x.value)
-    node.value = node.detail.total
+    node.detail = dice_roll(1, x.get_value())
 
-def _dice_drop_low_operator(node, x, y):
-    node.detail = dice_drop(x.detail, y.value)
-    node.value = node.detail.total
+def _drop_low_operator(node, x, y):
+    node.detail = dice_drop(x.detail, y.get_value())
 
-def _dice_drop_high_operator(node, x, y):
-    node.detail = dice_drop(x.detail, y.value, high=True)
-    node.value = node.detail.total
+def _drop_high_operator(node, x, y):
+    node.detail = dice_drop(x.detail, y.get_value(), high=True)
 
-def _dice_keep_low_operator(node, x, y):
-    node.detail = dice_drop(x.detail, y.value, high=False, keep=True)
-    node.value = node.detail.total
+def _keep_low_operator(node, x, y):
+    node.detail = dice_drop(x.detail, y.get_value(), high=False, keep=True)
 
-def _dice_keep_high_operator(node, x, y):
-    node.detail = dice_drop(x.detail, y.value, high=True, keep=True)
-    node.value = node.detail.total
+def _keep_high_operator(node, x, y):
+    node.detail = dice_drop(x.detail, y.get_value(), high=True, keep=True)
 
 def _add_operator(node, x, y):
-    node.value = x.value+y.value
+    node._value = x.get_value()+y.get_value()
 
 def _subtract_operator(node, x, y):
-    node.value = x.value-y.value
+    node._value = x.get_value()-y.get_value()
 
 def _negate_operator(node, x):
-    node.value = -x.value
+    node._value = -x.get_value()
 
 def _mult_operator(node, x, y):
-    node.value = x.value*y.value
+    node._value = x.get_value()*y.get_value()
 
 def _div_operator(node, x, y):
-    node.value = x.value/y.value
+    node._value = x.get_value()/y.get_value()
 
 def _pow_operator(node, x, y):
-    node.value = x.value ** y.value
+    node._value = x.get_value() ** y.get_value()
 
 def _factorial_operator(node, x):
-    node.value = factorial(x.value)
+    node._value = factorial(x.get_value())
+
+def _dice_explode_operator(node, x):
+    node.detail = dice_explode(x.detail)
 
 def _choose_operator(node, x, y):
-    n = force_integral(x.value, "choice operand")
-    k = force_integral(y.value, "choice operand")
+    n = force_integral(x.get_value(), "choice operand")
+    k = force_integral(y.get_value(), "choice operand")
     if n < 0 or k < 0:
         raise ValueError("choose operator must have positive operands")
     if k > n:
-        node.value = 0
+        node._value = 0
     else:
-        node.value = factorial(n) / (factorial(k) * factorial(n - k))
-        if node.value.is_integer():
-            node.value = int(node.value)
+        node._value = factorial(n) / (factorial(k) * factorial(n - k))
+        if node._value.is_integer():
+            node._value = int(node._value)
 
 def _sqrt_operator(node, x):
-    node.value = sqrt(x.value)
+    node._value = sqrt(x.get_value())
 
 def _remainder_operator(node, x, y):
-    node.value = x.value % y.value
+    node._value = x.get_value() % y.get_value()
 
 def _repeat_function(node, x, y, ev):
     exit_iter_pos = ev.iter_pos
     
-    reps = force_integral(y.value, "repetitions")
+    reps = force_integral(y.get_value(), "repetitions")
     if reps < 0:
         raise ValueError("Cannot repeat negative times")
     if reps == 0:
-        node.detail = MultiExpression([])
-        node.value = node.detail
+        node.detail = MultiExpr()
         return
 
-    flats = [FlatExpression(x.value,
-                            x.detail,
-                            x.describe(ex_ar=True, op_escape=False),
-                            x.describe(breakout=True))]
+    flats = [FlatExpr(x.get_value(),
+                    x.describe(),
+                    x.describe(uneval=True))]
     redo_node = x
     for i in range(reps - 1):
         ev._jump_to(ev.token_list.index(node)+2) # skip function open paren
-        #print(f"evaluator current {ev.iter_pos}: {ev._current()}")
         redo_node = ev.expr()
-        flats.append(FlatExpression(redo_node.value,
-                                    redo_node.detail,
-                                    redo_node.describe(ex_ar=True, op_escape=False),
-                                    redo_node.describe(breakout=True)))
+        flats.append(FlatExpr(redo_node.get_value(),
+                            redo_node.describe(),
+                            redo_node.describe(uneval=True)))
     # jump forward past end of function parentheses
     ev._jump_to(exit_iter_pos)
 
-    node.detail = MultiExpression(flats)
-    node.value = node.detail
+    node.detail = MultiExpr(contents=flats)
 
 def _number_nud(self, ev):
     return self
 
 def _left_paren_nud(self, ev):
     self.first = ev.expr()
-    self.value = self.first.value
+    self._value = self.first.get_value()
     self.detail = self.first.detail
     ev.advance(expected=")")
     return self
@@ -621,24 +795,26 @@ Evaluator.register_symbol(")")
 Evaluator.register_symbol(",")
 Evaluator.register_function_double("repeat", _repeat_function)
 Evaluator.register_function_single("sqrt", _sqrt_operator)
+Evaluator.register_function_single("fact", _factorial_operator)
 
 Evaluator.register_infix("+", _add_operator, 10)
 Evaluator.register_infix("-", _subtract_operator, 10)
 Evaluator.register_infix("*", _mult_operator, 20)
+Evaluator.register_infix("×", _mult_operator, 20)
 Evaluator.register_infix("/", _div_operator, 20)
+Evaluator.register_infix("÷", _div_operator, 20)
 Evaluator.register_infix("%", _remainder_operator, 20)
 Evaluator.register_prefix("-", _negate_operator, 100)
 Evaluator.register_infix("^", _pow_operator, 110, right_assoc=True)
 
-Evaluator.register_postfix("!", _factorial_operator, 120)
-
 Evaluator.register_infix("C", _choose_operator, 130)._spaces = True
 Evaluator.register_infix("choose", _choose_operator, 130)._spaces = True
+Evaluator.register_postfix("!", _dice_explode_operator, 140)
 
-Evaluator.register_infix("dl", _dice_drop_low_operator, 190)
-Evaluator.register_infix("dh", _dice_drop_high_operator, 190)
-Evaluator.register_infix("kl", _dice_keep_low_operator, 190)
-Evaluator.register_infix("kh", _dice_keep_high_operator, 190)
+Evaluator.register_infix("dl", _drop_low_operator, 190)
+Evaluator.register_infix("dh", _drop_high_operator, 190)
+Evaluator.register_infix("kl", _keep_low_operator, 190)
+Evaluator.register_infix("kh", _keep_high_operator, 190)
 
 Evaluator.register_infix("d", _dice_operator, 200)
 Evaluator.register_prefix("d", _dice_operator_prefix, 200)
