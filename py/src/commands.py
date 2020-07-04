@@ -134,21 +134,18 @@ __Explode__ `!`
     roll whose value is added to the total. These extra rolls can also trigger further rolls.
     Example: `{BOT_SUMMON_PREFIX}roll 10d4!`
 __Keep/Drop__ `kh` (keep high), `kl` (keep low), `dh` (drop high), `dl` (drop low)
-    Use as `<values>kh<N>` to keep the `<N>` highest value from `<diceroll>`.
-    `<values>` must be a collection of values, like rolled dice. `<N>` must be a positive integer.
+    Use as `<diceroll>kh<N>` to keep the `<N>` highest values from `<diceroll>`.
     Example: `{BOT_SUMMON_PREFIX}roll 4d6kh3` or `{BOT_SUMMON_PREFIX}roll repeat(3d6, 5)dl2`
 __Combinatorics__ `fact() C choose`
     `fact(<N>)` is N factorial (`!` is reserved for exploding dice).
-        `fact(5) = 2 * 3 * 4 * 5 = 120`
-    Use as `<n> C <k>` or `<n> choose <k>`. (https://en.wikipedia.org/wiki/Combination).
+    `<n> C <k>` or `<n> choose <k>` to count choices (https://en.wikipedia.org/wiki/Combination).
 __Arithmetic__ `+ - * / % ^`
     Use as you'd expect. `1+4`, `2*8`, `4^3^2`...
     `%` is remainder. `^` is power, not xor.
 __Functions__ `repeat() sqrt()`
     `repeat(<expression>, <n>)` to roll `<expression>`, `<n>` times.
-    `sqrt(<x>)` tries to get the square root of `<x>`.
+    `sqrt(<x>)` for the square root of `<x>`.
 __Parentheses__ `( )` enforce associativity and order of operations.
-    Example: `{BOT_SUMMON_PREFIX}roll 3d((2+23)/5)`
 __Semicolons__ `;` act as dividers, allowing several independent rolls from one message.
     Example: `{BOT_SUMMON_PREFIX}roll 1d20+5; 2d6+5`
 """),
