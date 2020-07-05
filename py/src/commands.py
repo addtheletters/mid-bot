@@ -129,32 +129,35 @@ That's all.
 __**roll**__
 Rolls some dice and does some math.
 This handles a subset of standard dice notation (https://en.wikipedia.org/wiki/Dice_notation).
-Here's what it can do, roughly in order of operator precedence.
+Roughly in order of precedence:
 
 __Dice roll__ `d`
-    `<N>d<S>` to roll `<N>` dice of size `<S>`, adding the results. `<N>` omitted will roll 1 dice.
-__Success Comparison__ `?= ?> ?< ?>= ?<=`
-    Count how many items of a dice roll or other collection succeed a comparison.
-    `{BOT_SUMMON_PREFIX}roll 4d6?=5` for how many 5's are rolled from 4 six-sided dice.
-    `{BOT_SUMMON_PREFIX}roll repeat(3d6, 10)?>=4` for how many out of 10 rolls of 3d6 total to 4 or more.  
+    `<N>d<S>` to roll N dice of size S, evaluated by adding the results. This produces a collection. N omitted will roll 1 dice. 
+__Collective Comparison__ `?= ?> ?< ?>= ?<=`
+    Filter for and count how many items from a collection succeed a comparison.
+    `{BOT_SUMMON_PREFIX}roll 4d6?=5` for how many times 5 is rolled from 4 six-sided dice. 
 __Keep/Drop__ `kh` (keep high), `kl` (keep low), `dh` (drop high), `dl` (drop low)
-    `<diceroll>kh<N>` keeps the `<N>` highest values from `<diceroll>`.
-    `repeat` expressions also work. 
+    `<collection>kh<N>` keeps the N highest values from the collection.
     `{BOT_SUMMON_PREFIX}roll 4d6kh3` or `{BOT_SUMMON_PREFIX}roll repeat(3d6, 5)dl2`
 __Explode__ `!`, also `!= !> !< !>= !<=`
-    `<diceroll>!` A highest-possible roll triggers another roll, added to the total.
-    You can append a comparison to explode on rolls that pass it instead.
+    `<diceroll>!` Highest-possible rolls explode (triggers another roll).
+    With comparison, will explode on rolls that succeed.
     `{BOT_SUMMON_PREFIX}roll 10d4!`, `{BOT_SUMMON_PREFIX}roll 8d6!>4`
 __Combinatorics__ `choose` or `C`
-    `<n> C <k>` or `<n> choose <k>` to count choices. (https://en.wikipedia.org/wiki/Combination)
+    `<n> C <k>` or `<n> choose <k>` to count choices.
 __Arithmetic__ `+ - * / % ^`
     Use as you'd expect. `%` is remainder. `^` is power, not xor.
-__Functions__ `repeat() sqrt() fact()`
-    `repeat(<expression>, <n>)` to evaluate `<expression>`, `<n>` times.
-    `sqrt(<x>)` is square root of `<x>`.
+__Value Comparison__ `= > < >= <=`
+    Evaluates to 1 if success, 0 if not. `{BOT_SUMMON_PREFIX}roll 1d20+5 >= 15`
+__Functions__ `agg() fact() repeat() sqrt()`
+    `agg(<collection>, <operator>)` to aggregate the collection using the operator.
+        Valid operators are: `+ - * / % ^`. Dice rolls are already aggregated using `+`.
+        Try `{BOT_SUMMON_PREFIX}roll agg(3d8, *)` or `{BOT_SUMMON_PREFIX}roll agg(repeat(3d6+2, 4), +)`
     `fact(<N>)` is N factorial (`!` is reserved for exploding dice).
-__Parentheses__ `( )` help with associativity, order of operations.
-__Semicolons__ `;` dividers, allowing several rolls from one message.
+    `repeat(<expression>, <n>)` repeats the evaluation, producing a n-size collection.
+    `sqrt(<x>)` square root of x.
+__Parentheses__ `( )` for associativity and order of operations.
+__Semicolons__ `;` for several rolls in one message.
     `{BOT_SUMMON_PREFIX}roll 1d20+5; 2d6+5`
 """),
     Command(["holdem", "h"], command_holdem, "Deal out cards.",

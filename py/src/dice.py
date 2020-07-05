@@ -13,7 +13,7 @@ from utils import escape, codeblock
 ProtoToken = collections.namedtuple("ProtoToken", ["type", "value"])
 
 KEYWORDS = [
-    "C", "choose", "repeat", "sqrt", "fact",
+    "C", "choose", "repeat", "sqrt", "fact", "agg"
 ]
 KEYWORD_PATTERN = '|'.join(KEYWORDS)
 TOKEN_SPEC = [
@@ -21,7 +21,8 @@ TOKEN_SPEC = [
     ("KEYWORD",  KEYWORD_PATTERN),       # Keywords
     ("DICE",     r"[dk][hl]|[d]"),       # Diceroll operators
     ("EXPLODE",  r"!>=|!<=|![><=]|!"),   # Dice explosions
-    ("COMP",     r"\?>=|\?<=|\?[><=]"),  # Comparisons
+    ("DCOMP",    r"\?>=|\?<=|\?[><=]"),  # Success filter comparisons
+    ("COMP",     r"[><]=|[><=]"),        # Comparisons
     ("OP",       r"[+\-*×/÷%^()]"),      # Generic operators
     ("SEP",      r"[,]"),                # Separators like commas
     ("END",      r"[;\n]"),              # Line end / break characters
@@ -80,7 +81,7 @@ def symbolize(symbol_table, tokens):
     current_roll = []
     for pretoken in tokens:
         symbol_id = pretoken.type
-        if pretoken.type in ("OP", "DICE", "KEYWORD", "SEP", "COMP", "EXPLODE"):
+        if pretoken.type in ("OP", "DICE", "KEYWORD", "SEP", "COMP", "EXPLODE", "DCOMP"):
             symbol_id = pretoken.value
         try:  # look up symbol type
             symbol = symbol_table[symbol_id]
@@ -213,8 +214,7 @@ def success_filter(dice, condition):
         raise SyntaxError(
             "Can't filter for successes (operand not a collection)")
 
-    new_values = SuccessValues(str(condition),
-                               items=dice.items,
+    new_values = SuccessValues(items=dice.items,
                                dropped=dice.dropped,
                                added=dice.added)
     failures = []
@@ -222,6 +222,19 @@ def success_filter(dice, condition):
         if not condition(pair[1]):
             failures.append(pair[0])
     new_values.dropped.extend(failures)
+    return new_values
+
+
+# Produce a version of this collection which is evaluated by aggregating
+# using a provided function.
+def aggregate_using(collected, agg_func, agg_joiner=", "):
+    if not isinstance(collected, CollectedValues):
+        raise SyntaxError("Can't aggregate (operand not a collection)")
+
+    new_values = AggregateValues(agg_func, agg_joiner,
+                                 items=collected.items,
+                                 dropped=collected.dropped,
+                                 added=collected.added)
     return new_values
 
 
@@ -233,7 +246,7 @@ class ExprResult:
 
     # repr will be how this expression's final result will be shown
     def __repr__(self):
-        return f"{self.get_value()}"
+        return str(self.get_value())
 
     # Helpers allowing literal values and ExprResult instances to be handled
     # by a single code path
@@ -294,7 +307,7 @@ class CollectedValues(ExprResult):
         self.added = added if added else []
 
     def __repr__(self):
-        return f"{len(self.items)} item" + ("s" if len(self.items) == 1 else "")
+        return f"{len(self.items)} item" + ("s" if len(self.items) != 1 else "")
 
     def copy(self):
         return CollectedValues(self.items.copy(),
@@ -336,7 +349,7 @@ class CollectedValues(ExprResult):
 
     # Aggregate together non-dropped items.
     def aggregate(self, func=None):
-        values = self.get_remaining()
+        values = [ExprResult.value(x) for x in self.get_remaining()]
         return list(itertools.accumulate(values, func))
 
     def total(self, func=None):
@@ -368,7 +381,7 @@ class MultiExpr(CollectedValues):
     def get_value(self):
         if self.get_remaining_count() == 1:
             return self.get_remaining()[0].get_value()
-        return str(self)
+        return None
 
     def get_description(self, joiner="\n"):
         out = "{\n"
@@ -411,18 +424,14 @@ class DiceValues(CollectedValues):
 # Total value is evaluated to the number of non-dropped items remaining.
 class SuccessValues(CollectedValues):
 
-    def __init__(self, comparison,
-                 items=None, dropped=None, added=None):
+    def __init__(self, items=None, dropped=None, added=None):
         super().__init__(items, dropped, added)
-        # A string representing the filter used to determine success.
-        self.comparison = comparison
 
     def __repr__(self):
         return f"{self.get_value()} success" + ("es" if self.get_value() != 1 else "")
 
     def copy(self):
-        return SuccessValues(self.comparison,
-                             self.items.copy(),
+        return SuccessValues(self.items.copy(),
                              self.dropped.copy(),
                              self.added.copy())
 
@@ -432,6 +441,33 @@ class SuccessValues(CollectedValues):
     def get_description(self):
         return "(" + super().get_description()\
             + ")=" + str(self)
+
+
+class AggregateValues(CollectedValues):
+
+    def __init__(self, agg_func, agg_joiner,
+                 items=None, dropped=None, added=None):
+        super().__init__(items, dropped, added)
+        self.agg_func = agg_func      # lambda function to aggregate with
+        self.agg_joiner = agg_joiner  # string representing operator used to aggregate
+
+    def __repr__(self):
+        return str(self.get_value())
+
+    def copy(self):
+        return AggregateValues(self.agg_func, self.agg_joiner,
+                               self.items.copy(),
+                               self.dropped.copy(),
+                               self.added.copy())
+
+    # Override to apply aggregate operation.
+    def total(self):
+        return super().total(func=self.agg_func)
+
+    # Override to use appropriate joiner. Assume all aggregation operators are
+    # infix.
+    def get_description(self):
+        return "(" + super().get_description(joiner=escape(self.agg_joiner)) + ")"
 
 
 # Based on Pratt top-down operator precedence.
@@ -467,6 +503,13 @@ class Evaluator:
     def _current(self):
         return self.token_current
 
+    def peek(self):
+        try:
+            peeked = self.token_list[self.iter_pos]
+        except IndexError:
+            return None
+        return peeked
+
     def advance(self, expected=None):
         if expected and self._current()._kind != expected:
             raise SyntaxError(f"Missing expected: {expected}")
@@ -477,7 +520,7 @@ class Evaluator:
         # token type.
         _kind = None
         # operator binding power, 0 for literals.
-        bp = 0
+        _bp = 0
 
         # show operator after child for display purposes
         _postfix = False
@@ -537,16 +580,17 @@ class Evaluator:
                     return f"{self.get_value()}"
 
                 # repeated expression
-                if self._kind == "repeat" and (not predrop):
+                if (self._kind == "repeat" or self._kind == "agg") and (not predrop):
                     return ExprResult.description(self.detail)
 
                 if self.detail:
-                    detail_description = " " + ExprResult.description(self.detail)
-                if self.is_diceroll():
+                    detail_description = " " + \
+                        ExprResult.description(self.detail)
+                if self.is_collection():
+                    if len(self.detail.get_all_items()) < 2 and self.detail.get_value() != None:
+                        detail_description = "=" + str(self.detail)
                     # hide details if parent drop/keep node already will show
                     # them
-                    if len(self.detail.get_all_items()) < 2:
-                        detail_description = "=" + str(self.detail.get_value())
                     if predrop:
                         detail_description = ""
 
@@ -577,13 +621,15 @@ class Evaluator:
 
             if self._kind == "choose" or self._kind == "C":
                 return "(" + prewrap + ")"
-            elif self.is_diceroll() and not (predrop or uneval):
+            elif self.is_collection() and not (predrop or uneval):
                 return "[" + prewrap + "]"
             return prewrap
 
         def __repr__(self):
             if self._kind == "NUMBER":
                 return f"{self._value}"
+            if self._kind in ARITHMETICS.keys():
+                return self._kind
             out = [self._kind, self.first, self.second]
             out = map(str, filter(None, out))
             return "<" + " ".join(out) + ">"
@@ -591,7 +637,7 @@ class Evaluator:
         def is_collection(self):
             if self.detail != None and isinstance(self.detail, CollectedValues):
                 return True
-            return self.is_diceroll() or self._kind == "repeat"
+            return False
 
         def is_diceroll(self):
             return self._kind == "d" or self.is_dropkeepadd()
@@ -617,7 +663,7 @@ class Evaluator:
         prev = self._current()
         self._next()
         left = prev.as_prefix(self)
-        while right_bp < self._current().bp:
+        while right_bp < self._current()._bp:
             prev = self._current()
             self._next()
             left = prev.as_infix(self, left)
@@ -633,10 +679,10 @@ class Evaluator:
             s.__name__ = "symbol-" + symbol_kind
             s.__qualname__ = "symbol-" + symbol_kind
             s._kind = symbol_kind
-            s.bp = bind_power
+            s._bp = bind_power
             Evaluator.SYMBOL_TABLE[symbol_kind] = s
         else:
-            s.bp = max(bind_power, s.bp)
+            s._bp = max(bind_power, s._bp)
         return s
 
     @staticmethod
@@ -833,9 +879,17 @@ def build_success_lambda(compare_operator, target):
 
 def build_comparison_operator(operator):
     def _comparison_operator(node, x, y):
-        node.detail = success_filter(x.detail,
+        grouping = SuccessValues(items=[x.get_value()])
+        node.detail = success_filter(grouping,
                                      build_success_lambda(operator, y.get_value()))
     return _comparison_operator
+
+
+def build_comparison_filter(operator):
+    def _comparison_filter(node, x, y):
+        node.detail = success_filter(x.detail,
+                                     build_success_lambda(operator, y.get_value()))
+    return _comparison_filter
 
 
 def build_comparison_exploder(operator):
@@ -851,7 +905,15 @@ def build_arithmetic_operator(operator):
     return _arithmetic_operator
 
 
-def _number_nud(self, ev):
+def _aggregate_function(node, x, y, ev):
+    try:
+        agg_func = ARITHMETICS[y._kind]
+        node.detail = aggregate_using(x.detail, agg_func, y._kind)
+    except KeyError as err:
+        raise SyntaxError(f"Unknown infix aggregator: {y._kind}") from err
+
+
+def _reflex_nud(self, ev):
     return self
 
 
@@ -862,8 +924,20 @@ def _left_paren_nud(self, ev):
     ev.advance(expected=")")
     return self
 
+
+def build_dash_nud(bind_power):
+    def _dash_nud(self, ev):
+        follower = ev.peek()
+        if follower != None and follower._kind != ")":
+            self.first = ev.expr(bind_power)
+            self.second = None
+            _negate_operator(self, self.first)    
+        return self
+    return _dash_nud
+
+
 # initialize symbol table with type classes
-Evaluator.register_symbol("NUMBER").as_prefix = _number_nud
+Evaluator.register_symbol("NUMBER").as_prefix = _reflex_nud
 Evaluator.register_symbol("END")
 Evaluator.register_symbol("(").as_prefix = _left_paren_nud
 Evaluator.register_symbol(")")
@@ -871,22 +945,26 @@ Evaluator.register_symbol(",")
 Evaluator.register_function_double("repeat", _repeat_function)
 Evaluator.register_function_single("sqrt", _sqrt_operator)
 Evaluator.register_function_single("fact", _factorial_operator)
+Evaluator.register_function_double("agg", _aggregate_function)
 
-Evaluator.register_infix("+", build_arithmetic_operator("+"), 10)
-Evaluator.register_infix("-", build_arithmetic_operator("-"), 10)
-Evaluator.register_infix("*", build_arithmetic_operator("*"), 20)
+for comp in COMPARISONS.keys():
+    Evaluator.register_infix(comp,
+                             build_comparison_operator(comp), 5)._spaces = True
+
+Evaluator.register_infix("+", build_arithmetic_operator("+"), 10).as_prefix = _reflex_nud
+Evaluator.register_infix("-", build_arithmetic_operator("-"), 10) # dash nud special case because of negation prefix
+Evaluator.register_infix("*", build_arithmetic_operator("*"), 20).as_prefix = _reflex_nud
 Evaluator.register_infix("×", build_arithmetic_operator("*"), 20)
-Evaluator.register_infix("/", build_arithmetic_operator("/"), 20)
+Evaluator.register_infix("/", build_arithmetic_operator("/"), 20).as_prefix = _reflex_nud
 Evaluator.register_infix("÷", build_arithmetic_operator("/"), 20)
-Evaluator.register_infix("%", build_arithmetic_operator("%"), 20)
+Evaluator.register_infix("%", build_arithmetic_operator("%"), 20).as_prefix = _reflex_nud
 
-Evaluator.register_prefix("-", _negate_operator, 100)
+Evaluator.register_symbol("-").as_prefix = build_dash_nud(100)
 Evaluator.register_infix(
-    "^", build_arithmetic_operator("^"), 110, right_assoc=True)
+    "^", build_arithmetic_operator("^"), 110, right_assoc=True).as_prefix = _reflex_nud
 
 Evaluator.register_infix("C", _choose_operator, 130)._spaces = True
 Evaluator.register_infix("choose", _choose_operator, 130)._spaces = True
-
 
 for comp in COMPARISONS.keys():
     Evaluator.register_infix("!" + comp,
@@ -896,7 +974,7 @@ Evaluator.register_postfix("!", _dice_explode_operator, 190)
 
 for comp in COMPARISONS.keys():
     Evaluator.register_infix("?" + comp,
-                             build_comparison_operator(comp), 190)
+                             build_comparison_filter(comp), 190)
 
 Evaluator.register_infix("dl", _drop_low_operator, 190)
 Evaluator.register_infix("dh", _drop_high_operator, 190)
