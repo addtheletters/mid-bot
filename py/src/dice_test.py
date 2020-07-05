@@ -75,6 +75,14 @@ class DiceTest(unittest.TestCase):
         dice.roll("(10d4?=3)+10d6")
         dice.roll("((10d4?=(1d4!))+10)d6")
 
+    def test_interpret_aggregate(self):
+        dice.roll("agg(10d6, +)")
+        dice.roll("agg(10d4, -)")
+        dice.roll("agg(repeat(3d10, 4), *)")
+        dice.roll("agg(8d6, /)")
+        dice.roll("agg(3d10, ^)")
+        dice.roll("agg(4d10, %)")
+
     # Test that semicolons separate an input into multiple rolls.
     def test_breaks(self):
         results = dice.roll("1d20+5; 2d6+5")
