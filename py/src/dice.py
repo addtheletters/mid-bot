@@ -17,19 +17,21 @@ KEYWORDS = [
 ]
 KEYWORD_PATTERN = '|'.join(KEYWORDS)
 TOKEN_SPEC = [
-    ("NUMBER",   r"\d+(\.\d*)?"),       # Integer or decimal number
-    ("KEYWORD",  KEYWORD_PATTERN),      # Keywords
-    ("DICE",     r"[dk][hl]|[d]"),      # Diceroll operators
+    ("NUMBER",   r"\d+(\.\d*)?"),        # Integer or decimal number
+    ("KEYWORD",  KEYWORD_PATTERN),       # Keywords
+    ("DICE",     r"[dk][hl]|[d]"),       # Diceroll operators
+    ("EXPLODE",  r"!>=|!<=|![><=]|!"),   # Dice explosions
     ("COMP",     r"\?>=|\?<=|\?[><=]"),  # Comparisons
-    ("OP",       r"[+\-*×/÷%^()!]"),    # Generic operators
-    ("SEP",      r"[,]"),               # Separators like commas
-    ("END",      r"[;\n]"),             # Line end / break characters
-    ("SKIP",     r"[ \t]+"),            # Skip over spaces and tabs
-    ("MISMATCH", r"."),                 # Any other character
+    ("OP",       r"[+\-*×/÷%^()]"),      # Generic operators
+    ("SEP",      r"[,]"),                # Separators like commas
+    ("END",      r"[;\n]"),              # Line end / break characters
+    ("SKIP",     r"[ \t]+"),             # Skip over spaces and tabs
+    ("MISMATCH", r"."),                  # Any other character
 ]
 TOKEN_PATTERN = re.compile(
     '|'.join(f"(?P<{pair[0]}>{pair[1]})" for pair in TOKEN_SPEC))
 
+EXPLOSION_CAP = 10000
 
 # Cut input into tokens.
 # Based on tokenizer sample from the python docs.
@@ -60,7 +62,7 @@ def symbolize(symbol_table, tokens):
     current_roll = []
     for pretoken in tokens:
         symbol_id = pretoken.type
-        if pretoken.type in ("OP", "DICE", "KEYWORD", "SEP", "COMP"):
+        if pretoken.type in ("OP", "DICE", "KEYWORD", "SEP", "COMP", "EXPLODE"):
             symbol_id = pretoken.value
         try:  # look up symbol type
             symbol = symbol_table[symbol_id]
@@ -156,7 +158,7 @@ def dice_drop(dice, n, high=False, keep=False):
     return new_values
 
 
-def dice_explode(dice, condition=None, max_explosion=1000):
+def dice_explode(dice, condition=None, max_explosion=EXPLOSION_CAP):
     if not isinstance(dice, DiceValues):
         raise SyntaxError(f"Can't explode (not dice)")
     if condition == None:
@@ -583,7 +585,9 @@ class Evaluator:
             return self._kind == "d" or self.is_dropkeepadd()
 
         def is_dropkeepadd(self):
-            return self._kind in ("dl", "dh", "kl", "kh", "!", "?>", "?<", "?>=", "?<=", "?=")
+            return self._kind in ("dl", "dh", "kl", "kh",
+                                  "!", "!>", "!<", "!>=", "!<=", "!=",
+                                  "?>", "?<", "?>=", "?<=", "?=")
 
         # Is this node dice, or does any node in this subtree have dice?
         def contains_diceroll(self):
@@ -851,6 +855,12 @@ def build_comparison_operator(operator):
     return _comparison_operator
 
 
+def build_comparison_exploder(operator):
+    def _explode_compare_operator(node, x, y):
+        node.detail = dice_explode(x.detail,
+                                   build_success_lambda(operator, y.get_value()))
+    return _explode_compare_operator
+
 def _number_nud(self, ev):
     return self
 
@@ -884,7 +894,13 @@ Evaluator.register_infix("^", _pow_operator, 110, right_assoc=True)
 
 Evaluator.register_infix("C", _choose_operator, 130)._spaces = True
 Evaluator.register_infix("choose", _choose_operator, 130)._spaces = True
-Evaluator.register_postfix("!", _dice_explode_operator, 140)
+
+Evaluator.register_postfix("!", _dice_explode_operator, 190)
+Evaluator.register_infix("!>", build_comparison_exploder(">"), 190)
+Evaluator.register_infix("!<", build_comparison_exploder("<"), 190)
+Evaluator.register_infix("!>=", build_comparison_exploder(">="), 190)
+Evaluator.register_infix("!<=", build_comparison_exploder("<="), 190)
+Evaluator.register_infix("!=", build_comparison_exploder("="), 190)
 
 Evaluator.register_infix("?>", build_comparison_operator(">"), 190)
 Evaluator.register_infix("?<", build_comparison_operator("<"), 190)
