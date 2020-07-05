@@ -132,28 +132,30 @@ This handles a subset of standard dice notation (https://en.wikipedia.org/wiki/D
 Here's what it can do, roughly in order of operator precedence.
 
 __Dice roll__ `d`
-    Use as `<N>d<S>` to roll `<N>` dice of size `<S>`, adding the results.
-    `<N>` and `<S>` must be positive integers. `<N>` omitted will roll 1 dice.
-    Example: `{BOT_SUMMON_PREFIX}roll 8d6`
-__Explode__ `!`
-    `<diceroll>!` Attach to a dice roll, causing any highest-possible rolls to trigger another
-    roll whose value is added to the total. These extra rolls can also trigger further rolls.
-    Example: `{BOT_SUMMON_PREFIX}roll 10d4!`
+    `<N>d<S>` to roll `<N>` dice of size `<S>`, adding the results. `<N>` omitted will roll 1 dice.
+__Success Comparison__ `?= ?> ?< ?>= ?<=`
+    Count how many items of a dice roll or other collection succeed a comparison.
+    `{BOT_SUMMON_PREFIX}roll 4d6?=5` for how many 5's are rolled from 4 six-sided dice.
+    `{BOT_SUMMON_PREFIX}roll repeat(3d6, 10)?>=4` for how many out of 10 rolls of 3d6 total to 4 or more.  
 __Keep/Drop__ `kh` (keep high), `kl` (keep low), `dh` (drop high), `dl` (drop low)
-    Use as `<diceroll>kh<N>` to keep the `<N>` highest values from `<diceroll>`.
-    Example: `{BOT_SUMMON_PREFIX}roll 4d6kh3` or `{BOT_SUMMON_PREFIX}roll repeat(3d6, 5)dl2`
-__Combinatorics__ `fact() C choose`
-    `fact(<N>)` is N factorial (`!` is reserved for exploding dice).
-    `<n> C <k>` or `<n> choose <k>` to count choices (https://en.wikipedia.org/wiki/Combination).
+    `<diceroll>kh<N>` keeps the `<N>` highest values from `<diceroll>`.
+    `repeat` expressions also work. 
+    `{BOT_SUMMON_PREFIX}roll 4d6kh3` or `{BOT_SUMMON_PREFIX}roll repeat(3d6, 5)dl2`
+__Explode__ `!`, also `!= !> !< !>= !<=`
+    `<diceroll>!` A highest-possible roll triggers another roll, added to the total.
+    You can append a comparison to explode on rolls that pass it instead.
+    `{BOT_SUMMON_PREFIX}roll 10d4!`, `{BOT_SUMMON_PREFIX}roll 8d6!>4`
+__Combinatorics__ `choose` or `C`
+    `<n> C <k>` or `<n> choose <k>` to count choices. (https://en.wikipedia.org/wiki/Combination)
 __Arithmetic__ `+ - * / % ^`
-    Use as you'd expect. `1+4`, `2*8`, `4^3^2`...
-    `%` is remainder. `^` is power, not xor.
-__Functions__ `repeat() sqrt()`
-    `repeat(<expression>, <n>)` to roll `<expression>`, `<n>` times.
-    `sqrt(<x>)` for the square root of `<x>`.
-__Parentheses__ `( )` enforce associativity and order of operations.
-__Semicolons__ `;` act as dividers, allowing several independent rolls from one message.
-    Example: `{BOT_SUMMON_PREFIX}roll 1d20+5; 2d6+5`
+    Use as you'd expect. `%` is remainder. `^` is power, not xor.
+__Functions__ `repeat() sqrt() fact()`
+    `repeat(<expression>, <n>)` to evaluate `<expression>`, `<n>` times.
+    `sqrt(<x>)` is square root of `<x>`.
+    `fact(<N>)` is N factorial (`!` is reserved for exploding dice).
+__Parentheses__ `( )` help with associativity, order of operations.
+__Semicolons__ `;` dividers, allowing several rolls from one message.
+    `{BOT_SUMMON_PREFIX}roll 1d20+5; 2d6+5`
 """),
     Command(["holdem", "h"], command_holdem, "Deal out cards.",
             f"""
