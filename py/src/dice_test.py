@@ -55,6 +55,7 @@ class DiceTest(unittest.TestCase):
         dice.roll("8d6!<(3d2)")
         dice.roll("8d6!<=1d4")
         dice.roll("8d10!>=4")
+        dice.roll("2d4!~=3")
 
     def test_interpret_repeat(self):
         dice.roll("repeat(1, 3)")
@@ -74,6 +75,7 @@ class DiceTest(unittest.TestCase):
         dice.roll("repeat(3d6, 10)?>=4")
         dice.roll("(10d4?=3)+10d6")
         dice.roll("((10d4?=(1d4!))+10)d6")
+        dice.roll("10d6?~=1")
 
     def test_interpret_aggregate(self):
         dice.roll("agg(10d6, +)")

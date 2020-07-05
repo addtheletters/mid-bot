@@ -17,22 +17,22 @@ KEYWORDS = [
 ]
 KEYWORD_PATTERN = '|'.join(KEYWORDS)
 TOKEN_SPEC = [
-    ("NUMBER",   r"\d+(\.\d*)?"),        # Integer or decimal number
-    ("KEYWORD",  KEYWORD_PATTERN),       # Keywords
-    ("DICE",     r"[dk][hl]|[d]"),       # Diceroll operators
-    ("EXPLODE",  r"!>=|!<=|![><=]|!"),   # Dice explosions
-    ("DCOMP",    r"\?>=|\?<=|\?[><=]"),  # Success filter comparisons
-    ("COMP",     r"[><]=|[><=]"),        # Comparisons
-    ("OP",       r"[+\-*×/÷%^()]"),      # Generic operators
-    ("SEP",      r"[,]"),                # Separators like commas
-    ("END",      r"[;\n]"),              # Line end / break characters
-    ("SKIP",     r"[ \t]+"),             # Skip over spaces and tabs
-    ("MISMATCH", r"."),                  # Any other character
+    ("NUMBER",   r"\d+(\.\d*)?"),               # Integer or decimal number
+    ("KEYWORD",  KEYWORD_PATTERN),              # Keywords
+    ("DICE",     r"[dk][hl]|[d]"),              # Diceroll operators
+    ("EXPLODE",  r"![~><]=|![><=]|!"),          # Dice explosions
+    ("DCOMP",    r"\?[~><]=|\?[><=]"),          # Success filter comparisons
+    ("COMP",     r"[><~]=|[><=]"),              # Comparisons
+    ("OP",       r"[+\-*×/÷%^()]"),             # Generic operators
+    ("SEP",      r"[,]"),                       # Separators like commas
+    ("END",      r"[;\n]"),                     # Line end / break characters
+    ("SKIP",     r"[ \t]+"),                    # Skip over spaces and tabs
+    ("MISMATCH", r"."),                         # Any other character
 ]
 TOKEN_PATTERN = re.compile(
     '|'.join(f"(?P<{pair[0]}>{pair[1]})" for pair in TOKEN_SPEC))
 
-EXPLOSION_CAP = 10000
+EXPLOSION_CAP = 9999
 
 COMPARISONS = {
     "=": lambda x, y: x == y,
@@ -40,6 +40,7 @@ COMPARISONS = {
     "<": lambda x, y: x < y,
     ">=": lambda x, y: x >= y,
     "<=": lambda x, y: x <= y,
+    "~=": lambda x, y: x != y,
 }
 
 ARITHMETICS = {
@@ -784,7 +785,7 @@ def format_roll_results(results):
         if row.detail != None:
             final_value = str(row.detail)
         out += codeblock(row.describe(uneval=True)) +\
-            f"=> **{final_value}**" +\
+            f" => **{final_value}**" +\
             f"  |  {row.describe()}"
         out += "\n"
     return out
