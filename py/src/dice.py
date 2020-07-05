@@ -17,14 +17,15 @@ KEYWORDS = [
 ]
 KEYWORD_PATTERN = '|'.join(KEYWORDS)
 TOKEN_SPEC = [
-    ("NUMBER",   r"\d+(\.\d*)?"),      # Integer or decimal number
-    ("KEYWORD",  KEYWORD_PATTERN),     # Keywords
-    ("DICE",     r"[dk][hl]|[d]"),     # Diceroll operators
-    ("OP",       r"[+\-*×/÷%^()!]"),   # Generic operators
-    ("SEP",      r"[,]"),              # Separators like commas
-    ("END",      r"[;\n]"),            # Line end / break characters
-    ("SKIP",     r"[ \t]+"),           # Skip over spaces and tabs
-    ("MISMATCH", r"."),                # Any other character
+    ("NUMBER",   r"\d+(\.\d*)?"),       # Integer or decimal number
+    ("KEYWORD",  KEYWORD_PATTERN),      # Keywords
+    ("DICE",     r"[dk][hl]|[d]"),      # Diceroll operators
+    ("COMP",     r"\?>=|\?<=|\?[><=]"),  # Comparisons
+    ("OP",       r"[+\-*×/÷%^()!]"),    # Generic operators
+    ("SEP",      r"[,]"),               # Separators like commas
+    ("END",      r"[;\n]"),             # Line end / break characters
+    ("SKIP",     r"[ \t]+"),            # Skip over spaces and tabs
+    ("MISMATCH", r"."),                 # Any other character
 ]
 TOKEN_PATTERN = re.compile(
     '|'.join(f"(?P<{pair[0]}>{pair[1]})" for pair in TOKEN_SPEC))
@@ -59,7 +60,7 @@ def symbolize(symbol_table, tokens):
     current_roll = []
     for pretoken in tokens:
         symbol_id = pretoken.type
-        if pretoken.type in ("OP", "DICE", "KEYWORD", "SEP"):
+        if pretoken.type in ("OP", "DICE", "KEYWORD", "SEP", "COMP"):
             symbol_id = pretoken.value
         try:  # look up symbol type
             symbol = symbol_table[symbol_id]
@@ -185,6 +186,25 @@ def dice_explode(dice, condition=None, max_explosion=1000):
     return new_values
 
 
+# Look through collected values. Drop any that don't succeed the condition.
+# `condition` should be a lambda function returning True for a success.
+def success_filter(dice, condition):
+    if not isinstance(dice, CollectedValues):
+        raise SyntaxError(
+            "Can't filter for successes (operand not a collection)")
+
+    new_values = SuccessValues(str(condition),
+                               items=dice.items,
+                               dropped=dice.dropped,
+                               added=dice.added)
+    failures = []
+    for pair in enumerate(dice.get_remaining()):
+        if not condition(pair[1]):
+            failures.append(pair[0])
+    new_values.dropped.extend(failures)
+    return new_values
+
+
 # The result of evaluating an expression, to be stored in a parse tree node
 # which required computation or collection. This is for operations with
 # complexity that cannot be represented by formatting just the operator and
@@ -254,7 +274,7 @@ class CollectedValues(ExprResult):
         self.added = added if added else []
 
     def __repr__(self):
-        return f"[{len(self.items)} results]"
+        return f"{len(self.items)} item" + ("s" if len(self.items) == 1 else "")
 
     def copy(self):
         return CollectedValues(self.items.copy(),
@@ -319,7 +339,8 @@ class MultiExpr(CollectedValues):
             super().__init__(items=contents)
 
     def __repr__(self):
-        return f"{self.get_remaining_count()} result(s)"
+        remain_count = self.get_remaining_count()
+        return f"{remain_count} result" + ("s" if remain_count != 1 else "")
 
     def copy(self):
         return MultiExpr(copy_source=self)
@@ -330,11 +351,11 @@ class MultiExpr(CollectedValues):
         return str(self)
 
     def get_description(self, joiner="\n"):
-        out = "[\n"
+        out = "{\n"
         out += joiner.join(
             [self.format_item(f"**{ExprResult.value(self.items[i])}**  |  {ExprResult.description(self.items[i])}", i)
                 for i in range(len(self.items))])
-        return out + "\n]"
+        return out + "\n}"
 
 
 class DiceValues(CollectedValues):
@@ -344,6 +365,9 @@ class DiceValues(CollectedValues):
         super().__init__(items, dropped, added)
         self.dice_size = dice_size
         self.negated = negated
+
+    def __repr__(self):
+        return str(self.get_value())
 
     def copy(self):
         return DiceValues(self.dice_size, self.negated,
@@ -373,6 +397,9 @@ class SuccessValues(CollectedValues):
         # A string representing the filter used to determine success.
         self.comparison = comparison
 
+    def __repr__(self):
+        return f"{self.get_value()} success" + ("es" if self.get_value() != 1 else "")
+
     def copy(self):
         return SuccessValues(self.comparison,
                              self.items.copy(),
@@ -384,7 +411,7 @@ class SuccessValues(CollectedValues):
 
     def get_description(self):
         return "(" + super().get_description()\
-            + ")" + self.comparison + str(self.get_value())
+            + ")=" + str(self)
 
 
 # Based on Pratt top-down operator precedence.
@@ -548,13 +575,15 @@ class Evaluator:
             return "<" + " ".join(out) + ">"
 
         def is_collection(self):
+            if self.detail != None and isinstance(self.detail, CollectedValues):
+                return True
             return self.is_diceroll() or self._kind == "repeat"
 
         def is_diceroll(self):
             return self._kind == "d" or self.is_dropkeepadd()
 
         def is_dropkeepadd(self):
-            return self._kind in ("dl", "dh", "kl", "kh", "!")
+            return self._kind in ("dl", "dh", "kl", "kh", "!", "?>", "?<", "?>=", "?<=", "?=")
 
         # Is this node dice, or does any node in this subtree have dice?
         def contains_diceroll(self):
@@ -690,7 +719,7 @@ def format_roll_results(results):
     out = ""
     for row in results:
         final_value = row.get_value()
-        if final_value == None and row.detail != None:
+        if row.detail != None:
             final_value = str(row.detail)
         out += codeblock(row.describe(uneval=True)) +\
             f"=> **{final_value}**" +\
@@ -802,6 +831,26 @@ def _repeat_function(node, x, y, ev):
     node.detail = MultiExpr(contents=flats)
 
 
+COMPARISONS = {
+    "=": lambda x, y: x == y,
+    ">": lambda x, y: x > y,
+    "<": lambda x, y: x < y,
+    ">=": lambda x, y: x >= y,
+    "<=": lambda x, y: x <= y,
+}
+
+
+def build_success_lambda(compare_operator, target):
+    return lambda x: COMPARISONS[compare_operator](x, target)
+
+
+def build_comparison_operator(operator):
+    def _comparison_operator(node, x, y):
+        node.detail = success_filter(x.detail,
+                                     build_success_lambda(operator, y.get_value()))
+    return _comparison_operator
+
+
 def _number_nud(self, ev):
     return self
 
@@ -836,6 +885,12 @@ Evaluator.register_infix("^", _pow_operator, 110, right_assoc=True)
 Evaluator.register_infix("C", _choose_operator, 130)._spaces = True
 Evaluator.register_infix("choose", _choose_operator, 130)._spaces = True
 Evaluator.register_postfix("!", _dice_explode_operator, 140)
+
+Evaluator.register_infix("?>", build_comparison_operator(">"), 190)
+Evaluator.register_infix("?<", build_comparison_operator("<"), 190)
+Evaluator.register_infix("?>=", build_comparison_operator(">="), 190)
+Evaluator.register_infix("?<=", build_comparison_operator("<="), 190)
+Evaluator.register_infix("?=", build_comparison_operator("="), 190)
 
 Evaluator.register_infix("dl", _drop_low_operator, 190)
 Evaluator.register_infix("dh", _drop_high_operator, 190)
