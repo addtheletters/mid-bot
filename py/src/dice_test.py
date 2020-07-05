@@ -71,6 +71,8 @@ class DiceTest(unittest.TestCase):
         dice.roll("10d4?>=3")
         dice.roll("10d4?<=3")
         dice.roll("repeat(3d6, 10)?>=4")
+        dice.roll("(10d4?=3)+10d6")
+        dice.roll("((10d4?=(1d4!))+10)d6")
 
     # Test that semicolons separate an input into multiple rolls.
     def test_breaks(self):

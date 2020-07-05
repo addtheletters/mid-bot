@@ -525,11 +525,7 @@ class Evaluator:
                 if self.second != None else ""
 
             if self._kind == "(":  # parenthesis group
-                inner = describe_first
-                # skip showing parens if child is already parenthesized
-                if inner[len(inner) - 1] != ")" and inner[0] != "(":
-                    inner = "(" + inner + ")"
-                return inner
+                return "(" + describe_first + ")"
 
             spacer = " " if self._spaces else ""
             detail_description = ""
