@@ -63,6 +63,7 @@ class DiceTest(unittest.TestCase):
         dice.roll("repeat(10d20-5d6, 10)kh3")
         dice.roll("repeat(5d20kh3+sqrt(4*8), 10)")
         dice.roll("repeat(repeat(4*3d8, 2), 3)")
+        dice.roll("repeat(3d10, repeat(d8, 4)kh1)dl1")
 
     def test_interpret_successes(self):
         dice.roll("6d10?>5")

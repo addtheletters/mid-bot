@@ -21,7 +21,8 @@ TOKEN_SPEC = [
     ("KEYWORD",  KEYWORD_PATTERN),       # Keywords
     ("DICE",     r"[dk][hl]|[d]"),       # Diceroll operators
     ("EXPLODE",  r"!>=|!<=|![><=]|!"),   # Dice explosions
-    ("COMP",     r"\?>=|\?<=|\?[><=]"),  # Comparisons
+    ("DCOMP",    r"\?>=|\?<=|\?[><=]"),  # Success filter comparisons
+    ("COMP",     r"[><]=|[><=]"),        # Comparisons
     ("OP",       r"[+\-*×/÷%^()]"),      # Generic operators
     ("SEP",      r"[,]"),                # Separators like commas
     ("END",      r"[;\n]"),              # Line end / break characters
@@ -80,7 +81,7 @@ def symbolize(symbol_table, tokens):
     current_roll = []
     for pretoken in tokens:
         symbol_id = pretoken.type
-        if pretoken.type in ("OP", "DICE", "KEYWORD", "SEP", "COMP", "EXPLODE"):
+        if pretoken.type in ("OP", "DICE", "KEYWORD", "SEP", "COMP", "EXPLODE", "DCOMP"):
             symbol_id = pretoken.value
         try:  # look up symbol type
             symbol = symbol_table[symbol_id]
@@ -213,8 +214,7 @@ def success_filter(dice, condition):
         raise SyntaxError(
             "Can't filter for successes (operand not a collection)")
 
-    new_values = SuccessValues(str(condition),
-                               items=dice.items,
+    new_values = SuccessValues(items=dice.items,
                                dropped=dice.dropped,
                                added=dice.added)
     failures = []
@@ -368,7 +368,7 @@ class MultiExpr(CollectedValues):
     def get_value(self):
         if self.get_remaining_count() == 1:
             return self.get_remaining()[0].get_value()
-        return str(self)
+        return None
 
     def get_description(self, joiner="\n"):
         out = "{\n"
@@ -411,18 +411,14 @@ class DiceValues(CollectedValues):
 # Total value is evaluated to the number of non-dropped items remaining.
 class SuccessValues(CollectedValues):
 
-    def __init__(self, comparison,
-                 items=None, dropped=None, added=None):
+    def __init__(self, items=None, dropped=None, added=None):
         super().__init__(items, dropped, added)
-        # A string representing the filter used to determine success.
-        self.comparison = comparison
 
     def __repr__(self):
         return f"{self.get_value()} success" + ("es" if self.get_value() != 1 else "")
 
     def copy(self):
-        return SuccessValues(self.comparison,
-                             self.items.copy(),
+        return SuccessValues(self.items.copy(),
                              self.dropped.copy(),
                              self.added.copy())
 
@@ -542,11 +538,11 @@ class Evaluator:
 
                 if self.detail:
                     detail_description = " " + ExprResult.description(self.detail)
-                if self.is_diceroll():
+                if self.is_collection():
+                    if len(self.detail.get_all_items()) < 2 and self.detail.get_value() != None:
+                        detail_description = "=" + str(self.detail)
                     # hide details if parent drop/keep node already will show
                     # them
-                    if len(self.detail.get_all_items()) < 2:
-                        detail_description = "=" + str(self.detail.get_value())
                     if predrop:
                         detail_description = ""
 
@@ -577,7 +573,7 @@ class Evaluator:
 
             if self._kind == "choose" or self._kind == "C":
                 return "(" + prewrap + ")"
-            elif self.is_diceroll() and not (predrop or uneval):
+            elif self.is_collection() and not (predrop or uneval):
                 return "[" + prewrap + "]"
             return prewrap
 
@@ -830,12 +826,18 @@ def _repeat_function(node, x, y, ev):
 def build_success_lambda(compare_operator, target):
     return lambda x: COMPARISONS[compare_operator](x, target)
 
-
 def build_comparison_operator(operator):
     def _comparison_operator(node, x, y):
-        node.detail = success_filter(x.detail,
+        grouping = SuccessValues(items=[x.get_value()])
+        node.detail = success_filter(grouping,
                                      build_success_lambda(operator, y.get_value()))
     return _comparison_operator
+
+def build_comparison_filter(operator):
+    def _comparison_filter(node, x, y):
+        node.detail = success_filter(x.detail,
+                                     build_success_lambda(operator, y.get_value()))
+    return _comparison_filter
 
 
 def build_comparison_exploder(operator):
@@ -872,6 +874,10 @@ Evaluator.register_function_double("repeat", _repeat_function)
 Evaluator.register_function_single("sqrt", _sqrt_operator)
 Evaluator.register_function_single("fact", _factorial_operator)
 
+for comp in COMPARISONS.keys():
+    Evaluator.register_infix(comp,
+                             build_comparison_operator(comp), 5)._spaces = True
+
 Evaluator.register_infix("+", build_arithmetic_operator("+"), 10)
 Evaluator.register_infix("-", build_arithmetic_operator("-"), 10)
 Evaluator.register_infix("*", build_arithmetic_operator("*"), 20)
@@ -887,7 +893,6 @@ Evaluator.register_infix(
 Evaluator.register_infix("C", _choose_operator, 130)._spaces = True
 Evaluator.register_infix("choose", _choose_operator, 130)._spaces = True
 
-
 for comp in COMPARISONS.keys():
     Evaluator.register_infix("!" + comp,
                              build_comparison_exploder(comp), 190)
@@ -896,7 +901,7 @@ Evaluator.register_postfix("!", _dice_explode_operator, 190)
 
 for comp in COMPARISONS.keys():
     Evaluator.register_infix("?" + comp,
-                             build_comparison_operator(comp), 190)
+                             build_comparison_filter(comp), 190)
 
 Evaluator.register_infix("dl", _drop_low_operator, 190)
 Evaluator.register_infix("dh", _drop_high_operator, 190)
