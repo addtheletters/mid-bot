@@ -51,6 +51,10 @@ class DiceTest(unittest.TestCase):
     def test_interpret_explode(self):
         dice.roll("10d20!")
         dice.roll("10d4dl2!")
+        dice.roll("8d6!>4")
+        dice.roll("8d6!<(3d2)")
+        dice.roll("8d6!<=1d4")
+        dice.roll("8d10!>=4")
 
     def test_interpret_repeat(self):
         dice.roll("repeat(1, 3)")
@@ -59,6 +63,14 @@ class DiceTest(unittest.TestCase):
         dice.roll("repeat(10d20-5d6, 10)kh3")
         dice.roll("repeat(5d20kh3+sqrt(4*8), 10)")
         dice.roll("repeat(repeat(4*3d8, 2), 3)")
+
+    def test_interpret_successes(self):
+        dice.roll("6d10?>5")
+        dice.roll("10d8?<3")
+        dice.roll("8d4?=3")
+        dice.roll("10d4?>=3")
+        dice.roll("10d4?<=3")
+        dice.roll("repeat(3d6, 10)?>=4")
 
     # Test that semicolons separate an input into multiple rolls.
     def test_breaks(self):

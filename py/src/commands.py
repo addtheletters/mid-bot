@@ -132,16 +132,20 @@ This handles a subset of standard dice notation (https://en.wikipedia.org/wiki/D
 Here's what it can do, roughly in order of operator precedence.
 
 __Dice roll__ `d`
-    Use as `<N>d<S>` to roll `<N>` dice of size `<S>`, adding the results. `<N>` omitted will roll 1 dice.
-    Example: `{BOT_SUMMON_PREFIX}roll 8d6`
-__Explode__ `!`
-    `<diceroll>!` Any highest-possible roll triggers another roll whose value is added to the total.
-    Example: `{BOT_SUMMON_PREFIX}roll 10d4!`
+    `<N>d<S>` to roll `<N>` dice of size `<S>`, adding the results. `<N>` omitted will roll 1 dice.
+__Success Comparison__ `?= ?> ?< ?>= ?<=`
+    Count how many items of a dice roll or other collection succeed a comparison.
+    `{BOT_SUMMON_PREFIX}roll 4d6?=5` for how many 5's are rolled from 4 six-sided dice.
+    `{BOT_SUMMON_PREFIX}roll repeat(3d6, 10)?>=4` for how many out of 10 rolls of 3d6 total to 4 or more.  
 __Keep/Drop__ `kh` (keep high), `kl` (keep low), `dh` (drop high), `dl` (drop low)
     `<diceroll>kh<N>` keeps the `<N>` highest values from `<diceroll>`.
-    `repeat` expressions also work; if just one element remains, further arithmetic can be done. 
-    Example: `{BOT_SUMMON_PREFIX}roll 4d6kh3` or `{BOT_SUMMON_PREFIX}roll repeat(3d6, 5)dl2`
-__Combinatorics__ `choose C`
+    `repeat` expressions also work. 
+    `{BOT_SUMMON_PREFIX}roll 4d6kh3` or `{BOT_SUMMON_PREFIX}roll repeat(3d6, 5)dl2`
+__Explode__ `!`, also `!= !> !< !>= !<=`
+    `<diceroll>!` A highest-possible roll triggers another roll, added to the total.
+    You can append a comparison to explode on rolls that pass it instead.
+    `{BOT_SUMMON_PREFIX}roll 10d4!`, `{BOT_SUMMON_PREFIX}roll 8d6!>4`
+__Combinatorics__ `choose` or `C`
     `<n> C <k>` or `<n> choose <k>` to count choices. (https://en.wikipedia.org/wiki/Combination)
 __Arithmetic__ `+ - * / % ^`
     Use as you'd expect. `%` is remainder. `^` is power, not xor.
@@ -151,7 +155,7 @@ __Functions__ `repeat() sqrt() fact()`
     `fact(<N>)` is N factorial (`!` is reserved for exploding dice).
 __Parentheses__ `( )` help with associativity, order of operations.
 __Semicolons__ `;` dividers, allowing several rolls from one message.
-    Example: `{BOT_SUMMON_PREFIX}roll 1d20+5; 2d6+5`
+    `{BOT_SUMMON_PREFIX}roll 1d20+5; 2d6+5`
 """),
     Command(["holdem", "h"], command_holdem, "Deal out cards.",
             f"""

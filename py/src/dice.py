@@ -545,9 +545,7 @@ class Evaluator:
                     return ExprResult.description(self.detail)
 
                 if self.detail:
-                    detail_description = " " + \
-                        ExprResult.description(
-                            self.detail) if self.detail else ""
+                    detail_description = " " + ExprResult.description(self.detail)
                 if self.is_diceroll():
                     # hide details if parent drop/keep node already will show
                     # them
