@@ -441,7 +441,7 @@ class SuccessValues(CollectedValues):
 
     def get_description(self):
         return "(" + super().get_description()\
-            + ")=" + str(self)
+            + ")⇒" + str(self)
 
 
 class AggregateValues(CollectedValues):
@@ -589,7 +589,7 @@ class Evaluator:
                         ExprResult.description(self.detail)
                 if self.is_collection():
                     if len(self.detail.get_all_items()) < 2 and self.detail.get_value() != None:
-                        detail_description = "=" + str(self.detail)
+                        detail_description = "⇒" + str(self.detail)
                     # hide details if parent drop/keep node already will show
                     # them
                     if predrop:
@@ -785,7 +785,7 @@ def format_roll_results(results):
         if row.detail != None:
             final_value = str(row.detail)
         out += codeblock(row.describe(uneval=True)) +\
-            f" => **{final_value}**" +\
+            f" ⇒ **{final_value}**" +\
             f"  |  {row.describe()}"
         out += "\n"
     return out
