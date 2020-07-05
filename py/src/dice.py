@@ -33,6 +33,24 @@ TOKEN_PATTERN = re.compile(
 
 EXPLOSION_CAP = 10000
 
+COMPARISONS = {
+    "=": lambda x, y: x == y,
+    ">": lambda x, y: x > y,
+    "<": lambda x, y: x < y,
+    ">=": lambda x, y: x >= y,
+    "<=": lambda x, y: x <= y,
+}
+
+ARITHMETICS = {
+    "+": lambda x, y: x + y,
+    "-": lambda x, y: x - y,
+    "*": lambda x, y: x * y,
+    "/": lambda x, y: x / y,
+    "%": lambda x, y: x % y,
+    "^": lambda x, y: x ** y,
+}
+
+
 # Cut input into tokens.
 # Based on tokenizer sample from the python docs.
 # https://docs.python.org/3.6/library/re.html#regular-expression-examples
@@ -756,28 +774,8 @@ def _keep_high_operator(node, x, y):
     node.detail = dice_drop(x.detail, y.get_value(), high=True, keep=True)
 
 
-def _add_operator(node, x, y):
-    node._value = x.get_value() + y.get_value()
-
-
-def _subtract_operator(node, x, y):
-    node._value = x.get_value() - y.get_value()
-
-
 def _negate_operator(node, x):
     node._value = -x.get_value()
-
-
-def _mult_operator(node, x, y):
-    node._value = x.get_value() * y.get_value()
-
-
-def _div_operator(node, x, y):
-    node._value = x.get_value() / y.get_value()
-
-
-def _pow_operator(node, x, y):
-    node._value = x.get_value() ** y.get_value()
 
 
 def _factorial_operator(node, x):
@@ -835,15 +833,6 @@ def _repeat_function(node, x, y, ev):
     node.detail = MultiExpr(contents=flats)
 
 
-COMPARISONS = {
-    "=": lambda x, y: x == y,
-    ">": lambda x, y: x > y,
-    "<": lambda x, y: x < y,
-    ">=": lambda x, y: x >= y,
-    "<=": lambda x, y: x <= y,
-}
-
-
 def build_success_lambda(compare_operator, target):
     return lambda x: COMPARISONS[compare_operator](x, target)
 
@@ -860,6 +849,13 @@ def build_comparison_exploder(operator):
         node.detail = dice_explode(x.detail,
                                    build_success_lambda(operator, y.get_value()))
     return _explode_compare_operator
+
+
+def build_arithmetic_operator(operator):
+    def _arithmetic_operator(node, x, y):
+        node._value = ARITHMETICS[operator](x.get_value(), y.get_value())
+    return _arithmetic_operator
+
 
 def _number_nud(self, ev):
     return self
@@ -882,31 +878,31 @@ Evaluator.register_function_double("repeat", _repeat_function)
 Evaluator.register_function_single("sqrt", _sqrt_operator)
 Evaluator.register_function_single("fact", _factorial_operator)
 
-Evaluator.register_infix("+", _add_operator, 10)
-Evaluator.register_infix("-", _subtract_operator, 10)
-Evaluator.register_infix("*", _mult_operator, 20)
-Evaluator.register_infix("×", _mult_operator, 20)
-Evaluator.register_infix("/", _div_operator, 20)
-Evaluator.register_infix("÷", _div_operator, 20)
-Evaluator.register_infix("%", _remainder_operator, 20)
+Evaluator.register_infix("+", build_arithmetic_operator("+"), 10)
+Evaluator.register_infix("-", build_arithmetic_operator("-"), 10)
+Evaluator.register_infix("*", build_arithmetic_operator("*"), 20)
+Evaluator.register_infix("×", build_arithmetic_operator("*"), 20)
+Evaluator.register_infix("/", build_arithmetic_operator("/"), 20)
+Evaluator.register_infix("÷", build_arithmetic_operator("/"), 20)
+Evaluator.register_infix("%", build_arithmetic_operator("%"), 20)
+
 Evaluator.register_prefix("-", _negate_operator, 100)
-Evaluator.register_infix("^", _pow_operator, 110, right_assoc=True)
+Evaluator.register_infix(
+    "^", build_arithmetic_operator("^"), 110, right_assoc=True)
 
 Evaluator.register_infix("C", _choose_operator, 130)._spaces = True
 Evaluator.register_infix("choose", _choose_operator, 130)._spaces = True
 
-Evaluator.register_postfix("!", _dice_explode_operator, 190)
-Evaluator.register_infix("!>", build_comparison_exploder(">"), 190)
-Evaluator.register_infix("!<", build_comparison_exploder("<"), 190)
-Evaluator.register_infix("!>=", build_comparison_exploder(">="), 190)
-Evaluator.register_infix("!<=", build_comparison_exploder("<="), 190)
-Evaluator.register_infix("!=", build_comparison_exploder("="), 190)
 
-Evaluator.register_infix("?>", build_comparison_operator(">"), 190)
-Evaluator.register_infix("?<", build_comparison_operator("<"), 190)
-Evaluator.register_infix("?>=", build_comparison_operator(">="), 190)
-Evaluator.register_infix("?<=", build_comparison_operator("<="), 190)
-Evaluator.register_infix("?=", build_comparison_operator("="), 190)
+for comp in COMPARISONS.keys():
+    Evaluator.register_infix("!" + comp,
+                             build_comparison_exploder(comp), 190)
+
+Evaluator.register_postfix("!", _dice_explode_operator, 190)
+
+for comp in COMPARISONS.keys():
+    Evaluator.register_infix("?" + comp,
+                             build_comparison_operator(comp), 190)
 
 Evaluator.register_infix("dl", _drop_low_operator, 190)
 Evaluator.register_infix("dh", _drop_high_operator, 190)
