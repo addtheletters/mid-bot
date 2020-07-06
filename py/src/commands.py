@@ -133,13 +133,13 @@ Roughly in order of precedence:
 
 __Dice roll__ `d`
     `<N>d<S>` to roll N dice of size S, evaluated by adding the results. This produces a collection. N omitted will roll 1 dice. 
-__Collective Comparison__ `?= ?> ?< ?>= ?<=`
+__Collective Comparison__ `?= ?> ?< ?>= ?<= ?~=`
     Filter for and count how many items from a collection succeed a comparison.
     `{BOT_SUMMON_PREFIX}roll 4d6?=5` for how many times 5 is rolled from 4 six-sided dice. 
 __Keep/Drop__ `kh` (keep high), `kl` (keep low), `dh` (drop high), `dl` (drop low)
     `<collection>kh<N>` keeps the N highest values from the collection.
     `{BOT_SUMMON_PREFIX}roll 4d6kh3` or `{BOT_SUMMON_PREFIX}roll repeat(3d6, 5)dl2`
-__Explode__ `!`, also `!= !> !< !>= !<=`
+__Explode__ `!`, also `!= !> !< !>= !<= !~=`
     `<diceroll>!` Highest-possible rolls explode (triggers another roll).
     With comparison, will explode on rolls that succeed.
     `{BOT_SUMMON_PREFIX}roll 10d4!`, `{BOT_SUMMON_PREFIX}roll 8d6!>4`
@@ -147,7 +147,7 @@ __Combinatorics__ `choose` or `C`
     `<n> C <k>` or `<n> choose <k>` to count choices.
 __Arithmetic__ `+ - * / % ^`
     Use as you'd expect. `%` is remainder. `^` is power, not xor.
-__Value Comparison__ `= > < >= <=`
+__Value Comparison__ `= > < >= <= ~=`
     Evaluates to 1 if success, 0 if not. `{BOT_SUMMON_PREFIX}roll 1d20+5 >= 15`
 __Functions__ `agg() fact() repeat() sqrt()`
     `agg(<collection>, <operator>)` to aggregate the collection using the operator.

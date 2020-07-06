@@ -17,22 +17,22 @@ KEYWORDS = [
 ]
 KEYWORD_PATTERN = '|'.join(KEYWORDS)
 TOKEN_SPEC = [
-    ("NUMBER",   r"\d+(\.\d*)?"),        # Integer or decimal number
-    ("KEYWORD",  KEYWORD_PATTERN),       # Keywords
-    ("DICE",     r"[dk][hl]|[d]"),       # Diceroll operators
-    ("EXPLODE",  r"!>=|!<=|![><=]|!"),   # Dice explosions
-    ("DCOMP",    r"\?>=|\?<=|\?[><=]"),  # Success filter comparisons
-    ("COMP",     r"[><]=|[><=]"),        # Comparisons
-    ("OP",       r"[+\-*×/÷%^()]"),      # Generic operators
-    ("SEP",      r"[,]"),                # Separators like commas
-    ("END",      r"[;\n]"),              # Line end / break characters
-    ("SKIP",     r"[ \t]+"),             # Skip over spaces and tabs
-    ("MISMATCH", r"."),                  # Any other character
+    ("NUMBER",   r"\d+(\.\d*)?"),               # Integer or decimal number
+    ("KEYWORD",  KEYWORD_PATTERN),              # Keywords
+    ("DICE",     r"[dk][hl]|[d]"),              # Diceroll operators
+    ("EXPLODE",  r"![~><]=|![><=]|!"),          # Dice explosions
+    ("DCOMP",    r"\?[~><]=|\?[><=]"),          # Success filter comparisons
+    ("COMP",     r"[><~]=|[><=]"),              # Comparisons
+    ("OP",       r"[+\-*×/÷%^()]"),             # Generic operators
+    ("SEP",      r"[,]"),                       # Separators like commas
+    ("END",      r"[;\n]"),                     # Line end / break characters
+    ("SKIP",     r"[ \t]+"),                    # Skip over spaces and tabs
+    ("MISMATCH", r"."),                         # Any other character
 ]
 TOKEN_PATTERN = re.compile(
     '|'.join(f"(?P<{pair[0]}>{pair[1]})" for pair in TOKEN_SPEC))
 
-EXPLOSION_CAP = 10000
+EXPLOSION_CAP = 9999
 
 COMPARISONS = {
     "=": lambda x, y: x == y,
@@ -40,6 +40,7 @@ COMPARISONS = {
     "<": lambda x, y: x < y,
     ">=": lambda x, y: x >= y,
     "<=": lambda x, y: x <= y,
+    "~=": lambda x, y: x != y,
 }
 
 ARITHMETICS = {
@@ -276,10 +277,15 @@ class ExprResult:
 @total_ordering
 class FlatExpr(ExprResult):
 
-    def __init__(self, value, description, unevaluated):
+    def __init__(self, value, description, subrepr):
         self.value = value
         self.description = description
-        self.unevaluated = unevaluated
+        self.subrepr = subrepr
+
+    def __repr__(self):
+        if self.subrepr:
+            return self.subrepr
+        return super().__repr__()
 
     def get_value(self):
         return self.value
@@ -386,7 +392,7 @@ class MultiExpr(CollectedValues):
     def get_description(self, joiner="\n"):
         out = "{\n"
         out += joiner.join(
-            [self.format_item(f"**{ExprResult.value(self.items[i])}**  |  {ExprResult.description(self.items[i])}", i)
+            [self.format_item(f"**{str(self.items[i])}**  |  {ExprResult.description(self.items[i])}", i)
                 for i in range(len(self.items))])
         return out + "\n}"
 
@@ -440,7 +446,7 @@ class SuccessValues(CollectedValues):
 
     def get_description(self):
         return "(" + super().get_description()\
-            + ")=" + str(self)
+            + ")⇒" + str(self)
 
 
 class AggregateValues(CollectedValues):
@@ -463,6 +469,15 @@ class AggregateValues(CollectedValues):
     # Override to apply aggregate operation.
     def total(self):
         return super().total(func=self.agg_func)
+
+    # Override to wrap items in parens if necessary.
+    def format_item(self, base, index):
+        wrap = base
+        if isinstance(self.items[index], ExprResult)\
+                and (base[0] != "(" or base[-1] != ")")\
+                and (base[0] != "[" or base[-1] != "]"):
+            wrap = "(" + base + ")"
+        return super().format_item(wrap, index)
 
     # Override to use appropriate joiner. Assume all aggregation operators are
     # infix.
@@ -588,7 +603,7 @@ class Evaluator:
                         ExprResult.description(self.detail)
                 if self.is_collection():
                     if len(self.detail.get_all_items()) < 2 and self.detail.get_value() != None:
-                        detail_description = "=" + str(self.detail)
+                        detail_description = "⇒" + str(self.detail)
                     # hide details if parent drop/keep node already will show
                     # them
                     if predrop:
@@ -633,6 +648,14 @@ class Evaluator:
             out = [self._kind, self.first, self.second]
             out = map(str, filter(None, out))
             return "<" + " ".join(out) + ">"
+
+        def final_repr(self):
+            if self.detail != None:
+                return str(self.detail)
+            final_value = self.get_value()
+            if final_value == None:
+                return str(self)
+            return str(final_value)
 
         def is_collection(self):
             if self.detail != None and isinstance(self.detail, CollectedValues):
@@ -780,11 +803,9 @@ def roll(intext):
 def format_roll_results(results):
     out = ""
     for row in results:
-        final_value = row.get_value()
-        if row.detail != None:
-            final_value = str(row.detail)
+        final_value = row.final_repr()
         out += codeblock(row.describe(uneval=True)) +\
-            f"=> **{final_value}**" +\
+            f" ⇒ **{final_value}**" +\
             f"  |  {row.describe()}"
         out += "\n"
     return out
@@ -859,14 +880,14 @@ def _repeat_function(node, x, y, ev):
 
     flats = [FlatExpr(x.get_value(),
                       x.describe(),
-                      x.describe(uneval=True))]
+                      x.final_repr())]
     redo_node = x
     for i in range(reps - 1):
         ev._jump_to(ev.token_list.index(node) + 2)  # skip function open paren
         redo_node = ev.expr()
         flats.append(FlatExpr(redo_node.get_value(),
                               redo_node.describe(),
-                              redo_node.describe(uneval=True)))
+                              redo_node.final_repr()))
     # jump forward past end of function parentheses
     ev._jump_to(exit_iter_pos)
 
@@ -931,7 +952,7 @@ def build_dash_nud(bind_power):
         if follower != None and follower._kind != ")":
             self.first = ev.expr(bind_power)
             self.second = None
-            _negate_operator(self, self.first)    
+            _negate_operator(self, self.first)
         return self
     return _dash_nud
 
@@ -951,13 +972,19 @@ for comp in COMPARISONS.keys():
     Evaluator.register_infix(comp,
                              build_comparison_operator(comp), 5)._spaces = True
 
-Evaluator.register_infix("+", build_arithmetic_operator("+"), 10).as_prefix = _reflex_nud
-Evaluator.register_infix("-", build_arithmetic_operator("-"), 10) # dash nud special case because of negation prefix
-Evaluator.register_infix("*", build_arithmetic_operator("*"), 20).as_prefix = _reflex_nud
+# Operators given reflex nud to allow their use as agg operands
+Evaluator.register_infix(
+    "+", build_arithmetic_operator("+"), 10).as_prefix = _reflex_nud
+# dash nud special case because of negation prefix
+Evaluator.register_infix("-", build_arithmetic_operator("-"), 10)
+Evaluator.register_infix(
+    "*", build_arithmetic_operator("*"), 20).as_prefix = _reflex_nud
 Evaluator.register_infix("×", build_arithmetic_operator("*"), 20)
-Evaluator.register_infix("/", build_arithmetic_operator("/"), 20).as_prefix = _reflex_nud
+Evaluator.register_infix(
+    "/", build_arithmetic_operator("/"), 20).as_prefix = _reflex_nud
 Evaluator.register_infix("÷", build_arithmetic_operator("/"), 20)
-Evaluator.register_infix("%", build_arithmetic_operator("%"), 20).as_prefix = _reflex_nud
+Evaluator.register_infix("%", build_arithmetic_operator(
+    "%"), 20).as_prefix = _reflex_nud
 
 Evaluator.register_symbol("-").as_prefix = build_dash_nud(100)
 Evaluator.register_infix(
