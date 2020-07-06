@@ -482,6 +482,9 @@ class AggregateValues(CollectedValues):
     # Override to use appropriate joiner. Assume all aggregation operators are
     # infix.
     def get_description(self):
+        # We could append = (total) for consistency with dice rolls.
+        # Some tweaks to describe() would be needed, as a special case
+        # for `agg` but not `d` causes differences in formatting paths.
         return "(" + super().get_description(joiner=escape(self.agg_joiner)) + ")"
 
 
@@ -591,10 +594,14 @@ class Evaluator:
             if not uneval:
                 if (not self.is_collection()) and (not self.contains_diceroll()):
                     # No child contains diceroll randomness, so just show the
-                    # value
+                    # value; or other repr if valueless like an operator
+                    # argument.
+                    if self.get_value() == None:
+                        return escape(str(self))
                     return f"{self.get_value()}"
 
-                # repeated expression
+                # repeated expression special case
+                # This causes details to be hidden from `agg`.
                 if (self._kind == "repeat" or self._kind == "agg") and (not predrop):
                     return ExprResult.description(self.detail)
 
@@ -602,10 +609,10 @@ class Evaluator:
                     detail_description = " " + \
                         ExprResult.description(self.detail)
                 if self.is_collection():
+                    # Hide breakout detail description if only one item
                     if len(self.detail.get_all_items()) < 2 and self.detail.get_value() != None:
                         detail_description = "⇒" + str(self.detail)
-                    # hide details if parent drop/keep node already will show
-                    # them
+                    # Hide details if outer collection already will show them
                     if predrop:
                         detail_description = ""
 
@@ -617,6 +624,7 @@ class Evaluator:
 
             left = describe_first
             right = describe_second
+
             if self.second == None:
                 # No operands, just describe this node's value.
                 if self.first == None:
