@@ -52,7 +52,7 @@ def command_roll(intext, *args):
         return f"Input not accepted.\n{codeblock(err, big=True)}"
 
 
-def command_holdem(intext, *args):
+def command_cards(intext, *args):
     if len(intext) == 0:
         return "A dry wind blows in from the west."
     try:
@@ -93,7 +93,7 @@ def command_holdem(intext, *args):
         if len(numbered) < count:
             ret = "> start of history.\n" + ret
     else:
-        return f"Unknown subcommand {codeblock(subcommand)}. {sub_help_notice('holdem')}"
+        return f"Unknown subcommand {codeblock(subcommand)}. {sub_help_notice('cards')}"
 
     # apply deck changes
     data.set_card_deck(deck)
@@ -104,7 +104,7 @@ def command_holdem(intext, *args):
 # Add commands here. Commands need at least one key and a function to perform.
 # A command function can return a string which will be sent as a response.
 COMMAND_CONFIG = [
-    Command(["help"], command_help,
+    Command(["help", "h"], command_help,
             f"List available commands or show usage ({BOT_SUMMON_PREFIX}{DEFAULT_HELP_KEY} {DEFAULT_HELP_KEY}).",
             f"""
 __**help**__
@@ -160,20 +160,20 @@ __Parentheses__ `( )` for associativity and order of operations.
 __Semicolons__ `;` for several rolls in one message.
     `{BOT_SUMMON_PREFIX}roll 1d20+5; 2d6+5`
 """),
-    Command(["holdem", "h"], command_holdem, "Deal out cards.",
+    Command(["cards", "c"], command_cards, "Deal out cards.",
             f"""
-__**holdem**__
+__**cards**__
 Throws out cards from a 52-card deck. (Direct-message the bot to receive cards in secret.)
 The following subcommands are available:
-__draw__ `{BOT_SUMMON_PREFIX}holdem draw <count>`
+__draw__ `{BOT_SUMMON_PREFIX}cards draw <count>`
     Draw `<count>` cards from the deck.
-__reset__ `{BOT_SUMMON_PREFIX}holdem reset`
+__reset__ `{BOT_SUMMON_PREFIX}cards reset`
     Reset the deck.
-__shuffle__ `{BOT_SUMMON_PREFIX}holdem shuffle`
+__shuffle__ `{BOT_SUMMON_PREFIX}cards shuffle`
     Shuffle the remaining cards in the deck.
-__inspect__ `{BOT_SUMMON_PREFIX}holdem inspect`
+__inspect__ `{BOT_SUMMON_PREFIX}cards inspect`
     Check the number of cards remaining in the deck, and peek at the top and bottom cards.
-__history__ `{BOT_SUMMON_PREFIX}holdem history <count>`
+__history__ `{BOT_SUMMON_PREFIX}cards history <count>`
     View `<count>` past actions performed using this command.
 """)
 ]

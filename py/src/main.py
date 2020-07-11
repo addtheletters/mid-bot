@@ -210,7 +210,8 @@ class MidClient(discord.Client):
                         await reply(msg, command_response)
                     return
                 except concurrent.futures.TimeoutError:
-                    await reply(msg, f"Command execution timed out for {codeblock(command+intext)}.")
+                    full_command = command + " " + intext
+                    await reply(msg, f"Command execution timed out for {codeblock(full_command)}.")
             else:
                 await reply(msg, f"Unrecognized command {codeblock(command)}. {help_notice()}")
 
