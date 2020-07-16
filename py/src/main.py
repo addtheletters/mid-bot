@@ -189,7 +189,7 @@ class MidClient(discord.Client):
             # message without prefix sent to bot
             if not msg.content.startswith(BOT_SUMMON_PREFIX):
                 if "hello" in msg.content.lower() or "hi" in msg.content.lower():
-                    await reply(msg, f"Hi 🙂")
+                    await reply(msg, f"Hi there! 🙂")
                     return
                 summon_text = BOT_SUMMON_PREFIX + "<command>"
                 await reply(msg, f"Summon me using: {codeblock(summon_text)}")
