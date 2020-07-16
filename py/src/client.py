@@ -75,13 +75,14 @@ class DataManager(SyncManager):
 # Bot client holding a pool of workers which are used to execute commands.
 class MidClient(discord.Client):
 
-    def __init__(self):
+    def __init__(self, channel_whitelist=None):
         discord.Client.__init__(self)
         self.executor = PebbleExecutor(
             MAX_COMMAND_WORKERS,
             COMMAND_TIMEOUT)
         self.sync_manager = None
         self.data = None
+        self.channel_whitelist = channel_whitelist
 
         self.commands = {}
         for cmd in COMMAND_CONFIG:
@@ -165,15 +166,26 @@ class MidClient(discord.Client):
             log_message(msg)
             await self.process_message(msg)
 
+    def is_whitelisted(self, msg):
+        if self.channel_whitelist == None:
+            return True
+        return msg.channel.id in self.channel_whitelist
+
     def should_process_message(self, msg):
         # don't reply to self
         if msg.author == self.user:
+            return False
+        # ignore if not whitelisted
+        if not self.is_whitelisted(msg):
             return False
         # ignore empty messages
         if msg.content == None or len(msg.content) < 1:
             return False
         # allow bot-mentions to be processed to inform users about the prefix
-        return msg.content.startswith(BOT_SUMMON_PREFIX) or self.user in msg.mentions
+        if self.user in msg.mentions:
+            return True
+        # check for bot prefix
+        return msg.content.startswith(BOT_SUMMON_PREFIX)
 
     async def process_message(self, msg):
         if msg.channel == None:
