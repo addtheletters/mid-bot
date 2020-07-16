@@ -7,8 +7,5 @@ lib64
 share/
 pyvenv.cfg
 
-# env var secrets
-src/.env
-
 # pycache
 src/__pycache__/
