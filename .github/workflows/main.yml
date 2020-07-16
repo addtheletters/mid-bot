@@ -1,0 +1,23 @@
+name: Deploy-Heroku
+
+# Trigger on push to heroku-deploy branch
+on:
+  push:
+    branches: [ heroku-deploy ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+    # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+    - uses: actions/checkout@v2
+    - uses: AkhileshNS/heroku-deploy@v3.2.6
+      with:
+        heroku_api_key: ${{secrets.HEROKU_API_KEY}}
+        heroku_email: ${{secrets.HEROKU_EMAIL}}
+        heroku_app_name: mid-bot
+        branch: heroku-deploy
+        # A URL to which a healthcheck is performed (checks for 200 request)
+        # healthcheck: # optional
+        # Value to check for when conducting healthcheck request
+        # checkstring: # optional
