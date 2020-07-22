@@ -324,7 +324,9 @@ class CollectedValues(ExprResult):
     def get_value(self):
         return self.total()
 
-    def format_item(self, base, index):
+    def format_item(self, base, index, formatting=True):
+        if not formatting:
+            return base
         if index in self.dropped:
             base = f"~~{base}~~"
         if index in self.added:

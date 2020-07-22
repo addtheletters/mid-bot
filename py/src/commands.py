@@ -13,7 +13,6 @@ log = logging.getLogger(__name__)
 
 Command = namedtuple("Command", ["keys", "func", "info", "detailed"])
 
-
 def sub_help_notice(command):
     return f"See `{BOT_SUMMON_PREFIX}{DEFAULT_HELP_KEY} {command}`."
 
@@ -55,10 +54,10 @@ def command_roll(intext, *args):
 def command_cards(intext, *args):
     if len(intext) == 0:
         return "A dry wind blows in from the west."
+    intext = intext.split(" ")
+    subargs = len(intext)
+    subcommand = intext[0]
     try:
-        intext = intext.split(" ")
-        subargs = len(intext)
-        subcommand = intext[0]
         # fetch deck from manager. TODO: lock here?
         data = args[0]
         deck = data.get_card_deck()
@@ -100,6 +99,7 @@ def command_cards(intext, *args):
     # update card log
     data.add_card_log(f"{user}: {ret if subcommand != 'history' else 'viewed history.'}")
     return ret
+
 
 # Add commands here. Commands need at least one key and a function to perform.
 # A command function can return a string which will be sent as a response.
