@@ -24,7 +24,7 @@ async def reply(msg, text):
     if len(payload) > MAX_MESSAGE_LENGTH:
         cutoff = len(payload) - MAX_MESSAGE_LENGTH
         payload = payload[:MAX_MESSAGE_LENGTH]\
-            + f" ... (full message too long to send, truncated {cutoff} characters.)"
+            + f" ... (message too long, truncated {cutoff} characters.)"
     await msg.channel.send(payload)
 
 
