@@ -83,11 +83,8 @@ class MidClient(discord.Client):
         self.sync_manager = None
         self.data = None
         self.channel_whitelist = channel_whitelist
-
         self.commands = {}
-        for cmd in COMMAND_CONFIG:
-            for key in cmd.keys:
-                self.register_command(key, cmd)
+        self.register_commands()
 
     # Override, near-identical to discord.Client.run().
     # Set up manager and tear down upon exit.
@@ -132,6 +129,11 @@ class MidClient(discord.Client):
         self.sync_manager.start()
         log.info("Sync manager started.")
         self.data = self.sync_manager.Data()
+
+    def register_commands(self):
+        for cmd in COMMAND_CONFIG:
+            for key in cmd.keys:
+                self.register_command(key, cmd)
 
     def register_command(self, key, cmd):
         if key in self.commands.keys():
