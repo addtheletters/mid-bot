@@ -122,13 +122,16 @@ def command_eject(intext, *args):
         except ValueError:
             for i in range(2, len(intext)):
                 target += " " + intext[i]
+    guy = " "
+    if target != "No one":
+        guy = "ඞ"
 
     message = f"""
     . 　　　。　　　　•　 　ﾟ　　。 　　.
 
 　　　.　　　 　.　　　　　。　　 。　. 　
 
-    .　　 。　　　　 ඞ    . 　　 • 　　　•
+    .　　 。　　　　 {guy}    . 　　 • 　　　•
 
 　　 ﾟ   . 　 {target} {action}　 。　.
 
