@@ -3,6 +3,7 @@
 from collections import namedtuple
 from functools import total_ordering
 import random
+import re
 
 BIG_JOKER_SUIT_CHAR = "(big)"
 BIG_JOKER_SUIT = 2
@@ -46,7 +47,11 @@ class Card(namedtuple("CardId", ["n", "s"])):
         return Card.SUITS[self.s]
 
     def unicode(self):
+        # not yet implemented
         return
+
+    def set_label(self, label):
+        self.label = label
 
     def __lt__(self, other):
         if self.n != other.n:
@@ -67,6 +72,11 @@ class Card(namedtuple("CardId", ["n", "s"])):
     @staticmethod
     def small_joker():
         return Card(JOKER_NUMBER, SMALL_JOKER_SUIT)
+
+
+class CustomCard():
+    def __init__(self, label):
+        self.label = label
 
 
 def build_deck_52():
@@ -97,6 +107,23 @@ def draw(deck, count=1):
     except IndexError as err:
         print("Deck has no more cards to draw.")
     return drawn
+
+def create_card(card_string):
+    rank = None
+    suit = None
+
+    matches = re.match("\d+\w+", card_string)
+    if matches[0] and matches[0] in Card.NUMBERS:
+        rank = matches[0]
+    if matches[1] and matches[1] in Card.SUITS:
+        suit = matches[1]
+
+    if rank and suit:
+        card = Card(rank, suit)
+        card.set_label(card_string)
+        return card
+    return CustomCard(card_string)
+
 
 if __name__ == "__main__":
     deck = build_deck_54()
