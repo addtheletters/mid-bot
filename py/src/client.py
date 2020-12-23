@@ -4,7 +4,7 @@ from config import *
 from multiprocessing import Lock
 from multiprocessing.managers import SyncManager
 from pebble import ProcessPool
-from utils import reply, log_message
+from utils import *
 import asyncio
 import cards
 import concurrent.futures
@@ -13,11 +13,6 @@ import logging
 
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
-
-
-def help_notice():
-    return f"See `{BOT_SUMMON_PREFIX}{DEFAULT_HELP_KEY}`."
-
 
 # Wrapper for ProcessPool to allow use with asyncio run_in_executor
 class PebbleExecutor(concurrent.futures.Executor):
@@ -187,7 +182,12 @@ class MidClient(discord.Client):
         if self.user in msg.mentions:
             return True
         # check for bot prefix
-        return msg.content.startswith(BOT_SUMMON_PREFIX)
+        if msg.content.startswith(get_summon_prefix()):
+            if IGNORE_STRIKETHROUGH:
+                return not msg.content.startswith("~~")
+            else:
+                return True
+        return False
 
     async def process_message(self, msg):
         if msg.channel == None:
@@ -197,18 +197,18 @@ class MidClient(discord.Client):
         async with msg.channel.typing():
             command = None
             # message without prefix sent to bot
-            if not msg.content.startswith(BOT_SUMMON_PREFIX):
+            if not msg.content.startswith(get_summon_prefix()):
                 if "hello" in msg.content.lower() or "hi" in msg.content.lower():
                     await reply(msg, f"Hi there! 🙂")
                     return
-                summon_text = BOT_SUMMON_PREFIX + "<command>"
+                summon_text = get_summon_prefix() + "<command>"
                 await reply(msg, f"Summon me using: {codeblock(summon_text)}")
                 return
 
-            intext = msg.content[len(BOT_SUMMON_PREFIX):].strip().replace(INVISIBLE_SPACE, "")
+            intext = msg.content[len(get_summon_prefix()):].strip().replace(INVISIBLE_SPACE, "")
             tokens = intext.split()
             if len(tokens) < 1:  # nothing following the prefix
-                await reply(msg, f"The bot hears you. {help_notice()}")
+                await reply(msg, f"The bot hears you. {get_help_notice()}")
                 return
             command = tokens[0]
             intext = intext[len(command) + 1:].strip()  # trim off command text
@@ -223,4 +223,5 @@ class MidClient(discord.Client):
                     full_command = command + " " + intext
                     await reply(msg, f"Command execution timed out for {codeblock(full_command)}.")
             else:
-                await reply(msg, f"Unrecognized command {codeblock(command)}. {help_notice()}")
+                if not IGNORE_UNRECOGNIZED:
+                    await reply(msg, f"Unrecognized command {codeblock(command)}. {get_help_notice()}")

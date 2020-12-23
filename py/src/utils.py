@@ -1,7 +1,9 @@
 # Utility functions.
 import discord
+
+import config
 import logging
-from config import MAX_MESSAGE_LENGTH, INVISIBLE_SPACE
+
 
 log = logging.getLogger(__name__)
 
@@ -21,9 +23,9 @@ def log_message(msg):
 # Send `text` in response to `msg`.
 async def reply(msg, text):
     payload = f"{msg.author.mention} {text}"
-    if len(payload) > MAX_MESSAGE_LENGTH:
-        cutoff = len(payload) - MAX_MESSAGE_LENGTH
-        payload = payload[:MAX_MESSAGE_LENGTH]\
+    if len(payload) > config.MAX_MESSAGE_LENGTH:
+        cutoff = len(payload) - config.MAX_MESSAGE_LENGTH
+        payload = payload[:config.MAX_MESSAGE_LENGTH]\
             + f" ... (message too long, truncated {cutoff} characters.)"
     await msg.channel.send(payload)
 
@@ -32,9 +34,20 @@ async def reply(msg, text):
 # Places zero-width spaces next to internal backtick characters to avoid
 # breaking out.
 def codeblock(text, big=False):
-    inner = str(text).replace('`', '`' + INVISIBLE_SPACE)
+    inner = str(text).replace('`', '`' + config.INVISIBLE_SPACE)
     if inner[0] == "`":
-        inner = INVISIBLE_SPACE + inner
+        inner = config.INVISIBLE_SPACE + inner
     if big:
         return f"```{inner}```"
     return f"`{inner}`"
+
+
+# Get the prefix string that the bot will recognize for a given guild ID.
+# Currently the default is used across all guilds.
+def get_summon_prefix(guild_id=None):
+    return config.DEFAULT_SUMMON_PREFIX
+
+
+# Get a help message string displaying how to input the `help` command.
+def get_help_notice():
+    return f"See `{get_summon_prefix()}{config.DEFAULT_HELP_KEY}`."
