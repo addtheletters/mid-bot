@@ -151,6 +151,7 @@ class MidClient(discord.Client):
             raise
         except Exception as err:
             log.info(f"Command execution raised error: {err}")
+            log.info("")
             cmd_future.cancel()
             raise
 
@@ -224,4 +225,4 @@ class MidClient(discord.Client):
                     await reply(msg, f"Command execution timed out for {codeblock(full_command)}.")
             else:
                 if not IGNORE_UNRECOGNIZED:
-                    await reply(msg, f"Unrecognized command {codeblock(command)}. {get_help_notice()}")
+                    await reply(msg, f"I don't know how to {codeblock(command)}. {get_help_notice()}")
