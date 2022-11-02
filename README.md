@@ -5,7 +5,7 @@ mid-bot is a barebones discord bot that can roll dice and shrug profusely.
 Pushes to the `heroku-deploy` Github branch are automatically deployed to Heroku by a Github workflow.
 
 Run the bot locally:
-- Install the dependencies listed in `requirements.txt`. (`pip3 install -r requirements.txt`)
+- Install the dependencies listed in `requirements.txt`. (`pip install -r requirements.txt`)
 - Set environment variable `DISCORD_TOKEN` to your bot API token. A `.env` file with the line `DISCORD_TOKEN=your.token.here` will work.
 - Run `./run_bot.sh`.
 

@@ -1,18 +1,19 @@
 # Direct dependencies are discord.py, Pebble, and python-dotenv.
 
-discord.py==1.3.4
-Pebble==4.5.3
-python-dotenv==0.13.0
+discord.py==2.0.1
+Pebble==5.0.2
+python-dotenv==0.21.0
 
 # The following should end up being present in the environment:
-# aiohttp==3.6.2
-# async-timeout==3.0.1
-# attrs==19.3.0
-# chardet==3.0.4
-# discord.py==1.3.4
-# idna==2.10
-# multidict==4.7.6
-# Pebble==4.5.3
-# python-dotenv==0.13.0
-# websockets==8.1
-# yarl==1.5.1
+# aiohttp==3.8.3
+# aiosignal==1.2.0
+# async-timeout==4.0.2
+# attrs==22.1.0
+# charset-normalizer==2.1.1
+# discord.py==2.0.1
+# frozenlist==1.3.1
+# idna==3.4
+# multidict==6.0.2
+# Pebble==5.0.2
+# python-dotenv==0.21.0
+# yarl==1.8.1

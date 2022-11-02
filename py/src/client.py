@@ -71,7 +71,10 @@ class DataManager(SyncManager):
 class MidClient(discord.Client):
 
     def __init__(self, channel_whitelist=None):
-        discord.Client.__init__(self)
+        mid_intents = discord.Intents.default()
+        mid_intents.message_content = True
+
+        discord.Client.__init__(self, intents=mid_intents)
         self.executor = PebbleExecutor(
             MAX_COMMAND_WORKERS,
             COMMAND_TIMEOUT)
@@ -81,36 +84,16 @@ class MidClient(discord.Client):
         self.commands = {}
         self.register_commands()
 
-    # Override, near-identical to discord.Client.run().
+    # Override, near-identical to discord.Client.start().
     # Set up manager and tear down upon exit.
     # Prevent main loop from exiting on subprocess SIGINT/SIGTERM.
     # Clean up executor workers upon completion.
-    def run(self, *args, **kwargs):
+    async def start(self, token: str, *, reconnect: bool = True) -> None:
         self.setup_manager()
 
-        loop = self.loop
-        async def runner():
-            try:
-                await self.start(*args, **kwargs)
-            finally:
-                await self.close()
+        await self.login(token)
+        await self.connect(reconnect=reconnect)
 
-        def stop_loop_on_completion(f):
-            loop.stop()
-
-        future = asyncio.ensure_future(runner(), loop=loop)
-        future.add_done_callback(stop_loop_on_completion)
-        try:
-            loop.run_forever()
-        except KeyboardInterrupt:
-            log.info("Received signal to terminate bot and event loop.")
-        finally:
-            future.remove_done_callback(stop_loop_on_completion)
-            log.info("Cleaning up tasks.")
-            discord.client._cleanup_loop(loop)
-
-        if not future.cancelled():
-            return future.result()
         self.executor.shutdown(False)
         if self.sync_manager != None:
             self.sync_manager.shutdown()
