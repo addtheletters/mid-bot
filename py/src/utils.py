@@ -42,6 +42,12 @@ def codeblock(text, big=False):
     return f"`{inner}`"
 
 
+def get_intents():
+    intents = discord.Intents.default()
+    intents.message_content = True
+    return intents
+
+
 # Get the prefix string that the bot will recognize for a given guild ID.
 # Currently the default is used across all guilds.
 def get_summon_prefix(guild_id=None):

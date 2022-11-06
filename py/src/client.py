@@ -1,6 +1,7 @@
 # A bot client with some basic custom skills.
-from commands import *
+from cmds import *
 from config import *
+from discord.ext import commands
 from multiprocessing import Lock
 from multiprocessing.managers import SyncManager
 from pebble import ProcessPool
@@ -10,9 +11,15 @@ import cards
 import concurrent.futures
 import discord
 import logging
+import os
 
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
+
+TEST_GUILD_ID = os.getenv("TEST_GUILD_ID")
+if TEST_GUILD_ID != None:
+    log.info(f"Got test guild id: {TEST_GUILD_ID}")
+TEST_GUILD = discord.Object(id=int(TEST_GUILD_ID)) if TEST_GUILD_ID else None
 
 # Wrapper for ProcessPool to allow use with asyncio run_in_executor
 class PebbleExecutor(concurrent.futures.Executor):
@@ -32,7 +39,7 @@ class PebbleExecutor(concurrent.futures.Executor):
             log.info("Closing workers...")
             self.pool.close()
         else:
-            log.info("Ending workers...")
+            log.info("Stopping workers...")
             self.pool.stop()
         self.pool.join()
         log.info("Workers joined.")
@@ -67,26 +74,117 @@ class DataManager(SyncManager):
         SyncManager.__init__(self)
 
 
+# Since app commands cannot accept a >100 character description, swap that field for the brief.
+def swap_hybrid_command_description(hybrid : commands.HybridCommand):
+    hybrid.app_command.description = hybrid.brief
+
+
+@commands.hybrid_command(
+    aliases = ["repeat"],
+    brief = "Repeat your message back",
+    description = f"""
+__**echo**__
+Sends the contents of your message back to you.
+The command keyword and bot prefix are excluded.
+""",
+)
+async def echo(ctx, *, msg: str = commands.parameter(
+    description = "The message you want repeated"
+)):
+    await ctx.send(msg)
+swap_hybrid_command_description(echo)
+
+@echo.error
+async def echo_error(ctx, error):
+    if isinstance(error, commands.errors.MissingRequiredArgument):
+        await ctx.send(f"There is only silence.")
+
+
+@commands.hybrid_command(
+    brief = "Get a Shruggie",
+    description = f"""
+__**shrug**__
+Displays a shruggie: ¯\\_(ツ)_/¯""",
+)
+async def shrug(ctx):
+    await ctx.send(escape("¯\\_(ツ)_/¯"))
+swap_hybrid_command_description(shrug)
+
+
+@commands.hybrid_command(
+    aliases = ["r"],
+    brief = "Roll some dice",
+    description = f"""
+__**roll**__
+Rolls some dice and does some math.
+This handles a subset of standard dice notation (https://en.wikipedia.org/wiki/Dice_notation).
+Roughly in order of precedence:
+
+__Dice roll__ `d`
+    `<N>d<S>` to roll N dice of size S, evaluated by adding the results. This produces a collection. N omitted will roll 1 dice. 
+__Collective Comparison__ `?= ?> ?< ?>= ?<= ?~=`
+    Filter for and count how many items from a collection succeed a comparison.
+    `{get_summon_prefix()}roll 4d6?=5` for how many times 5 is rolled from 4 six-sided dice. 
+__Keep/Drop__ `kh` (keep high), `kl` (keep low), `dh` (drop high), `dl` (drop low)
+    `<collection>kh<N>` keeps the N highest values from the collection.
+    `{get_summon_prefix()}roll 4d6kh3` or `{get_summon_prefix()}roll repeat(3d6, 5)dl2`
+__Explode__ `!`, also `!= !> !< !>= !<= !~=`
+    `<diceroll>!` Highest-possible rolls explode (triggers another roll).
+    With comparison, will explode on rolls that succeed.
+    `{get_summon_prefix()}roll 10d4!`, `{get_summon_prefix()}roll 8d6!>4`
+__Combinatorics__ `choose` or `C`
+    `<n> C <k>` or `<n> choose <k>` to count choices.
+__Arithmetic__ `+ - * / % ^`
+    Use as you'd expect. `%` is remainder. `^` is power, not xor.
+__Value Comparison__ `= > < >= <= ~=`
+    Evaluates to 1 if success, 0 if not. `{get_summon_prefix()}roll 1d20+5 >= 15`
+__Functions__ `agg() fact() repeat() sqrt()`
+    `agg(<collection>, <operator>)` to aggregate the collection using the operator.
+        Valid operators are: `+ - * / % ^`. Dice rolls are already aggregated using `+`.
+        Try `{get_summon_prefix()}roll agg(3d8, *)` or `{get_summon_prefix()}roll agg(repeat(3d6+2, 4), +)`
+    `fact(<N>)` is N factorial (`!` is reserved for exploding dice).
+    `repeat(<expression>, <n>)` repeats the evaluation, producing a n-size collection.
+    `sqrt(<x>)` square root of x.
+__Parentheses__ `( )` for associativity and order of operations.
+__Semicolons__ `;` for several rolls in one message.
+    `{get_summon_prefix()}roll 1d20+5; 2d6+5`
+"""
+)
+async def roll(ctx, *, formula: str = commands.parameter(
+    description = "The diceroll formula to roll"
+)):
+    # TODO implementation
+    await ctx.send("Not yet implemented.")
+swap_hybrid_command_description(roll)
+
+
 # Bot client holding a pool of workers which are used to execute commands.
-class MidClient(discord.Client):
+class MidClient(commands.Bot):
 
-    def __init__(self, channel_whitelist=None):
-        mid_intents = discord.Intents.default()
-        mid_intents.message_content = True
-
-        discord.Client.__init__(self, intents=mid_intents)
+    def __init__(self):
+        commands.Bot.__init__(self, 
+            command_prefix=get_summon_prefix(),
+            intents=get_intents(),
+            help_command=commands.DefaultHelpCommand(
+                paginator=commands.Paginator(
+                    prefix="", 
+                    suffix="")))
         self.executor = PebbleExecutor(
             MAX_COMMAND_WORKERS,
             COMMAND_TIMEOUT)
         self.sync_manager = None
         self.data = None
-        self.channel_whitelist = channel_whitelist
-        self.commands = {}
         self.register_commands()
+
+
+    async def setup_hook(self) -> None:
+        if TEST_GUILD:
+            self.tree.copy_global_to(guild=TEST_GUILD)
+            await self.tree.sync(guild=TEST_GUILD)
+        return await super().setup_hook()
 
     # Override, near-identical to discord.Client.start().
     # Set up manager and tear down upon exit.
-    # Prevent main loop from exiting on subprocess SIGINT/SIGTERM.
     # Clean up executor workers upon completion.
     async def start(self, token: str, *, reconnect: bool = True) -> None:
         self.setup_manager()
@@ -108,104 +206,11 @@ class MidClient(discord.Client):
         log.info("Sync manager started.")
         self.data = self.sync_manager.Data()
 
-    def register_commands(self):
-        for cmd in COMMAND_CONFIG:
-            for key in cmd.keys:
-                self.register_command(key, cmd)
-
-    def register_command(self, key, cmd):
-        if key in self.commands.keys():
-            log.warning(f"Key {codeblock(key)} is overloaded. Fix the command configuration.")
-        self.commands[key] = cmd
-        if key not in cmd.keys:
-            cmd.keys.append(key)
-
-    async def execute_command(self, command_key, msg, intext):
-        cmd_future = self.loop.run_in_executor(self.executor,
-                                               self.commands[command_key].func,
-                                               intext, self.data, f"{msg.author}")
-        try:
-            response = await asyncio.wait_for(cmd_future,
-                                              timeout=COMMAND_TIMEOUT)
-            return response
-        except concurrent.futures.TimeoutError:
-            log.info(f"Command {command_key} timed out on input: {intext}.")
-            cmd_future.cancel()
-            raise
-        except Exception as err:
-            log.info(f"Command execution raised error: {err}")
-            log.info("")
-            cmd_future.cancel()
-            raise
-
     async def on_ready(self):
         log.info(f"{self.user} is now connected to Discord in guilds:"
-                 + f"{[g.name for g in self.guilds]}")
+                 + f"{[(g.name, g.id) for g in self.guilds]}")
 
-    async def on_message(self, msg):
-        if (self.should_process_message(msg)):
-            log_message(msg)
-            await self.process_message(msg)
-
-    def is_whitelisted(self, msg):
-        if self.channel_whitelist == None:
-            return True
-        return msg.channel.id in self.channel_whitelist
-
-    def should_process_message(self, msg):
-        # don't reply to self
-        if msg.author == self.user:
-            return False
-        # ignore if not whitelisted
-        if not self.is_whitelisted(msg):
-            return False
-        # ignore empty messages
-        if msg.content == None or len(msg.content) < 1:
-            return False
-        # allow bot-mentions to be processed to inform users about the prefix
-        if self.user in msg.mentions:
-            return True
-        # check for bot prefix
-        if msg.content.startswith(get_summon_prefix()):
-            if IGNORE_STRIKETHROUGH:
-                return not msg.content.startswith("~~")
-            else:
-                return True
-        return False
-
-    async def process_message(self, msg):
-        if msg.channel == None:
-            log.info("Missing channel, can't reply.")
-            return
-
-        async with msg.channel.typing():
-            command = None
-            # message without prefix sent to bot
-            if not msg.content.startswith(get_summon_prefix()):
-                if "hello" in msg.content.lower() or "hi" in msg.content.lower():
-                    await reply(msg, f"Hi there! 🙂")
-                    return
-                summon_text = get_summon_prefix() + "<command>"
-                await reply(msg, f"Summon me using: {codeblock(summon_text)}")
-                return
-
-            intext = msg.content[len(get_summon_prefix()):].strip().replace(INVISIBLE_SPACE, "")
-            tokens = intext.split()
-            if len(tokens) < 1:  # nothing following the prefix
-                await reply(msg, f"The bot hears you. {get_help_notice()}")
-                return
-            command = tokens[0]
-            intext = intext[len(command) + 1:].strip()  # trim off command text
-
-            if command in self.commands.keys():
-                try:
-                    command_response = await self.execute_command(command, msg, intext)
-                    if command_response != None and len(command_response) > 0:
-                        await reply(msg, command_response)
-                    return
-                except concurrent.futures.TimeoutError:
-                    full_command = command + " " + intext
-                    await reply(msg, f"Command execution timed out for {codeblock(full_command)}.")
-            else:
-                if not IGNORE_UNRECOGNIZED:
-                    await reply(msg, f"I don't know how to {codeblock(command)}. {get_help_notice()}")
+    def register_commands(self):
+        self.add_command(echo)
+        self.add_command(shrug)
+        self.add_command(roll)
