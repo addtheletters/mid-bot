@@ -55,5 +55,6 @@ def get_summon_prefix(guild_id=None):
 
 
 # Get a help message string displaying how to input the `help` command.
-def get_help_notice():
-    return f"See `{get_summon_prefix()}{config.DEFAULT_HELP_KEY}`."
+def get_help_notice(cmd=None):
+    command_section = f" {cmd}" if cmd != None else ""
+    return f"See `{get_summon_prefix()}{config.DEFAULT_HELP_KEY}{command_section}`."
