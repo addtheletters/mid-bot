@@ -19,7 +19,6 @@ logging.basicConfig(level=logging.INFO)
 
 # Wrapper for ProcessPool to allow use with asyncio run_in_executor
 class PebbleExecutor(concurrent.futures.Executor):
-
     def __init__(self, max_workers, timeout=None):
         self.pool = ProcessPool(max_workers=max_workers)
         self.timeout = timeout
@@ -43,7 +42,6 @@ class PebbleExecutor(concurrent.futures.Executor):
 
 # Internal data held by the client, synced to workers via a manager process.
 class ClientData:
-
     def __init__(self):
         self.card_deck = cards.shuffle(cards.build_deck_52())
         self.card_logs = []
@@ -65,30 +63,29 @@ class ClientData:
 
 
 class DataManager(SyncManager):
-
     def __init__(self):
         SyncManager.__init__(self)
 
 
 # Since app commands cannot accept a >100 character description, swap that field for the brief.
-def swap_hybrid_command_description(hybrid : commands.HybridCommand):
+def swap_hybrid_command_description(hybrid: commands.HybridCommand):
     hybrid.app_command.description = hybrid.brief
 
 
 @commands.hybrid_command(
-    aliases = ["repeat"],
-    brief = "Repeat your message back",
-    description = f"""
+    aliases=["repeat"],
+    brief="Repeat your message back",
+    description=f"""
 __**echo**__
 Sends the contents of your message back to you.
 The command keyword and bot prefix are excluded.
 """,
 )
-async def echo(ctx, *, msg: str = commands.parameter(
-    description = "The message you want repeated"
-)):
+async def echo(
+    ctx, *, msg: str = commands.parameter(description="The message you want repeated")
+):
     await ctx.send(msg)
-swap_hybrid_command_description(echo)
+
 
 @echo.error
 async def echo_error(ctx, error):
@@ -97,20 +94,19 @@ async def echo_error(ctx, error):
 
 
 @commands.hybrid_command(
-    brief = "Get a Shruggie",
-    description = f"""
+    brief="Get a Shruggie",
+    description=f"""
 __**shrug**__
 Displays a shruggie: ¯\\_(ツ)_/¯""",
 )
 async def shrug(ctx):
     await ctx.send(escape("¯\\_(ツ)_/¯"))
-swap_hybrid_command_description(shrug)
 
 
 @commands.hybrid_command(
-    aliases = ["r"],
-    brief = "Roll some dice",
-    description = f"""
+    aliases=["r"],
+    brief="Roll some dice",
+    description=f"""
 __**roll**__
 Rolls some dice and does some math.
 This handles a subset of standard dice notation (https://en.wikipedia.org/wiki/Dice_notation).
@@ -144,11 +140,13 @@ __Functions__ `agg() fact() repeat() sqrt()`
 __Parentheses__ `( )` for associativity and order of operations.
 __Semicolons__ `;` for several rolls in one message.
     `{get_summon_prefix()}roll 1d20+5; 2d6+5`
-"""
+""",
 )
-async def roll(ctx, *, formula: str = commands.parameter(
-    description = "The dice roll formula to evaluate"
-)):
+async def roll(
+    ctx,
+    *,
+    formula: str = commands.parameter(description="The dice roll formula to evaluate"),
+):
     # TODO subprocess compute for the dice roll output
     output = "No result."
     try:
@@ -158,7 +156,7 @@ async def roll(ctx, *, formula: str = commands.parameter(
         log.info(f"Roll error. {err}")
         output = f"Roll error.\n{codeblock(err, big=True)}"
     await ctx.send(output)
-swap_hybrid_command_description(roll)
+
 
 class Cards(commands.Cog):
     def __init__(self, bot):
@@ -166,16 +164,20 @@ class Cards(commands.Cog):
         self.data = ClientData()
         swap_hybrid_command_description(self.cards)
 
-    def update_data(self, ctx: commands.Context, reply: str, new_deck: Sequence[cards.Card]):
+    def update_data(
+        self, ctx: commands.Context, reply: str, new_deck: Sequence[cards.Card]
+    ):
         # apply deck changes
         self.data.set_card_deck(new_deck)
         # update card log
-        self.data.add_card_log(f"{ctx.author.name} [{ctx.command.name}]: {reply if ctx.command.name != 'history' else 'viewed history.'}")
+        self.data.add_card_log(
+            f"{ctx.author.name} [{ctx.command.name}]: {reply if ctx.command.name != 'history' else 'viewed history.'}"
+        )
 
     @commands.hybrid_group(
-        aliases = ["c"],
-        brief = "Deal with cards",
-        description = f"""
+        aliases=["c"],
+        brief="Deal with cards",
+        description=f"""
     __**cards**__
     Throws out cards from a 52-card deck. (Direct-message the bot to receive cards in secret.)
     The following subcommands are available:
@@ -189,7 +191,7 @@ class Cards(commands.Cog):
         Check the number of cards remaining in the deck, and peek at the top and bottom cards.
     __history__ `{get_summon_prefix()}cards history <count>`
         View `<count>` past actions performed using this command.
-    """
+    """,
     )
     async def cards(self, ctx):
         await ctx.send(get_help_notice("cards"))
@@ -207,7 +209,7 @@ class Cards(commands.Cog):
         reply = "Deck reset and shuffled."
         self.update_data(ctx, reply, deck)
         await ctx.send(reply)
-    
+
     @cards.command()
     async def shuffle(self, ctx: commands.Context):
         deck = cards.shuffle(self.data.get_card_deck())
@@ -228,7 +230,7 @@ class Cards(commands.Cog):
     async def history(self, ctx: commands.Context, count: int = 1):
         history = self.data.get_card_logs()
         numbered = [f"{i+1}: {history[i]}" for i in range(len(history))][-count:]
-        reply = '\n'.join(numbered)
+        reply = "\n".join(numbered)
         if len(numbered) < count:
             reply = "> start of history.\n" + reply
         self.update_data(ctx, reply, self.data.get_card_deck())
@@ -237,26 +239,21 @@ class Cards(commands.Cog):
 
 # Bot client holding a pool of workers which are used to execute commands.
 class MidClient(commands.Bot):
-
     def __init__(self):
-        commands.Bot.__init__(self, 
+        commands.Bot.__init__(
+            self,
             command_prefix=get_summon_prefix(),
             intents=get_intents(),
             help_command=commands.DefaultHelpCommand(
                 # display text for commands without a category
                 no_category="Miscellaneous",
-
                 # don't wrap pages as code blocks, allowing us to use markdown formatting
-                paginator=commands.Paginator(
-                    prefix="", 
-                    suffix=""),
-                ))
-        self.executor = PebbleExecutor(
-            MAX_COMMAND_WORKERS,
-            COMMAND_TIMEOUT)
+                paginator=commands.Paginator(prefix="", suffix=""),
+            ),
+        )
+        self.executor = PebbleExecutor(MAX_COMMAND_WORKERS, COMMAND_TIMEOUT)
         self.sync_manager = None
         self.data = None
-
 
     async def setup_hook(self) -> None:
         await super().setup_hook()
@@ -264,11 +261,13 @@ class MidClient(commands.Bot):
         log.info("Commands in tree:")
         for cmd in self.tree.walk_commands():
             log.info(f"{cmd.name}")
-        
+
         TEST_GUILD_ID = os.getenv("TEST_GUILD_ID")
         if TEST_GUILD_ID != None:
             log.info(f"Got test guild id: {TEST_GUILD_ID}; will sync app commands")
-            TEST_GUILD = discord.Object(id=int(TEST_GUILD_ID)) if TEST_GUILD_ID else None
+            TEST_GUILD = (
+                discord.Object(id=int(TEST_GUILD_ID)) if TEST_GUILD_ID else None
+            )
             self.tree.copy_global_to(guild=TEST_GUILD)
             await self.tree.sync(guild=TEST_GUILD)
         else:
@@ -299,10 +298,15 @@ class MidClient(commands.Bot):
         self.data = self.sync_manager.Data()
 
     async def on_ready(self):
-        log.info(f"{self.user} is now connected to Discord in guilds:"
-                 + f"{[(g.name, g.id) for g in self.guilds]}")
+        log.info(
+            f"{self.user} is now connected to Discord in guilds:"
+            + f"{[(g.name, g.id) for g in self.guilds]}"
+        )
 
     async def register_commands(self):
+        swap_hybrid_command_description(echo)
+        swap_hybrid_command_description(shrug)
+        swap_hybrid_command_description(roll)
         self.add_command(echo)
         self.add_command(shrug)
         self.add_command(roll)
