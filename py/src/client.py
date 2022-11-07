@@ -1,5 +1,6 @@
 # A bot client with some basic custom skills.
 from typing import Sequence
+import typing
 from cmds import *
 from config import *
 from discord.ext import commands
@@ -7,7 +8,7 @@ from multiprocessing import Lock
 from multiprocessing.managers import SyncManager
 from pebble import ProcessPool
 from utils import *
-import asyncio
+
 import cards
 import concurrent.futures
 import discord
@@ -82,13 +83,15 @@ The command keyword and bot prefix are excluded.
 """,
 )
 async def echo(
-    ctx, *, msg: str = commands.parameter(description="The message you want repeated")
+    ctx: commands.Context,
+    *,
+    msg: str = commands.parameter(description="The message you want repeated"),
 ):
     await ctx.send(msg)
 
 
 @echo.error
-async def echo_error(ctx, error):
+async def echo_error(ctx: commands.Context, error):
     if isinstance(error, commands.errors.MissingRequiredArgument):
         await ctx.send(f"There is only silence.")
 
@@ -99,7 +102,7 @@ async def echo_error(ctx, error):
 __**shrug**__
 Displays a shruggie: ¯\\_(ツ)_/¯""",
 )
-async def shrug(ctx):
+async def shrug(ctx: commands.Context):
     await ctx.send(escape("¯\\_(ツ)_/¯"))
 
 
@@ -143,7 +146,7 @@ __Semicolons__ `;` for several rolls in one message.
 """,
 )
 async def roll(
-    ctx,
+    ctx: commands.Context,
     *,
     formula: str = commands.parameter(description="The dice roll formula to evaluate"),
 ):
@@ -156,6 +159,53 @@ async def roll(
         log.info(f"Roll error. {err}")
         output = f"Roll error.\n{codeblock(err, big=True)}"
     await ctx.send(output)
+
+
+@commands.hybrid_command(
+    aliases=["kill"],
+    brief="Eject an impostor.",
+    description=f"""
+__**eject**__
+Choose someone sus and eject them.
+`{get_summon_prefix()}eject <target> <imposter> <remaining>`
+Supply __imposter__ if you know whether they were an imposter.
+If impostors remain, supply a integer for __remaining__.
+""",
+)
+async def eject(
+    ctx: commands.Context,
+    target: discord.Member,
+    imposter: typing.Optional[bool] = None,
+    remaining: typing.Optional[int] = None,
+):
+    guy = "ඞ"
+    action = "was ejected."
+    if imposter == True:
+        action = "was an Impostor."
+    elif imposter == False:
+        action = "was not an Impostor."
+    remaincount = "　　。　  　.  　"
+    if remaining is not None:
+        remaincount = f"{remaining} Impostor(s) remain."
+    message = f"""
+    . 　　　。　　　　•　 　ﾟ　　。 　　.
+
+　　　.　　　 　.　　　　　。　　 。　. 　
+
+    .　　 。　　　　 {guy}    . 　　 • 　　　•
+
+　　 ﾟ   . 　 {target} {action}　 。　.
+
+　　  '　　  {remaincount}   　 • 　　 。
+
+　　ﾟ　　　.　　　.     　　　　.　       。"""
+    await ctx.send(message)
+
+
+@eject.error
+async def eject_error(ctx: commands.Context, error):
+    if isinstance(error, commands.errors.MemberNotFound):
+        await ctx.send(f"Sorry, I don't know who {error.argument} is.")
 
 
 class Cards(commands.Cog):
@@ -307,7 +357,9 @@ class MidClient(commands.Bot):
         swap_hybrid_command_description(echo)
         swap_hybrid_command_description(shrug)
         swap_hybrid_command_description(roll)
+        swap_hybrid_command_description(eject)
         self.add_command(echo)
         self.add_command(shrug)
         self.add_command(roll)
+        self.add_command(eject)
         await self.add_cog(Cards(self))
