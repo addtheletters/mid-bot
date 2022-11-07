@@ -160,6 +160,11 @@ async def roll(
         output = f"Roll error.\n{codeblock(err, big=True)}"
     await ctx.send(output)
 
+@roll.error
+async def roll_error(ctx: commands.Context, error):
+    if isinstance(error, commands.errors.HybridCommandError):
+        await ctx.send(f"{error}")
+
 
 @commands.hybrid_command(
     aliases=["kill"],
@@ -289,6 +294,8 @@ class Cards(commands.Cog):
 
 # Bot client holding a pool of workers which are used to execute commands.
 class MidClient(commands.Bot):
+    misc_commands = [echo, shrug, roll, eject]
+
     def __init__(self):
         commands.Bot.__init__(
             self,
@@ -354,12 +361,7 @@ class MidClient(commands.Bot):
         )
 
     async def register_commands(self):
-        swap_hybrid_command_description(echo)
-        swap_hybrid_command_description(shrug)
-        swap_hybrid_command_description(roll)
-        swap_hybrid_command_description(eject)
-        self.add_command(echo)
-        self.add_command(shrug)
-        self.add_command(roll)
-        self.add_command(eject)
+        for cmd in MidClient.misc_commands:
+            swap_hybrid_command_description(cmd)
+            self.add_command(cmd)
         await self.add_cog(Cards(self))
