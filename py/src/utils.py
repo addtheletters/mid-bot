@@ -1,5 +1,6 @@
 # Utility functions.
 import logging
+import typing
 
 import config
 import discord
@@ -22,9 +23,17 @@ def log_message(msg):
     )
 
 
+def is_slash_command(ctx: commands.Context) -> bool:
+    return ctx.interaction != None
+
+
 # Send `text` as a reply in the given context `ctx`.
-# Set `mention` to true to include an @ mention.
-async def reply(ctx: commands.Context, text: str, mention: bool = False):
+# Set `mention` to true to include an @ mention. Behavior if unset is to mention if not a slash command.
+async def reply(
+    ctx: commands.Context, text: str, mention: typing.Optional[bool] = None
+):
+    if mention is None:
+        mention = not is_slash_command(ctx)
     payload = f"{ctx.author.mention if mention else ''}{text}"
     if len(payload) > config.MAX_MESSAGE_LENGTH:
         cutoff = len(payload) - config.MAX_MESSAGE_LENGTH
