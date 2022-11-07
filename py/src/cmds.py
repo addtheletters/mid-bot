@@ -1,5 +1,6 @@
 # Commands.
 from collections import namedtuple
+import functools
 import typing
 from config import *
 from random import randint
@@ -11,12 +12,72 @@ import discord
 from discord.ext import commands
 import dice
 import logging
+import concurrent.futures
+
+from pebble import ProcessPool
 
 log = logging.getLogger(__name__)
 
-# Since app commands cannot accept a >100 character description, swap that field for the brief.
+# Wrapper for ProcessPool to allow use with asyncio run_in_executor
+class PebbleExecutor(concurrent.futures.Executor):
+    def __init__(self, max_workers, timeout=None):
+        self.pool = ProcessPool(max_workers=max_workers)
+        self.timeout = timeout
+
+    def submit(self, fn, *args, **kwargs):
+        return self.pool.schedule(fn, args=args, timeout=self.timeout)
+
+    def map(self, func, *iterables, timeout=None, chunksize=1):
+        raise NotImplementedError("This wrapper does not support `map`.")
+
+    def shutdown(self, wait=True):
+        if wait:
+            log.info("Closing workers...")
+            self.pool.close()
+        else:
+            log.info("Stopping workers...")
+            self.pool.stop()
+        self.pool.join()
+        log.info("Workers joined.")
+
+
 def swap_hybrid_command_description(hybrid: commands.HybridCommand):
     hybrid.app_command.description = hybrid.brief
+
+
+P = typing.ParamSpec("P")
+
+
+async def as_subprocess_command(
+    ctx: commands.Context, func: typing.Callable[..., str], *args, **kwargs
+) -> None:
+    loop: asyncio.AbstractEventLoop = ctx.bot.loop
+    executor: PebbleExecutor = ctx.bot.executor
+    cmd_future = loop.run_in_executor(
+        executor, functools.partial(func, *args, **kwargs)
+    )
+    output = f"Executing {ctx.command.name}: {ctx.kwargs}..."
+    log.info(output)
+    try:
+        async with ctx.typing():
+            output = await asyncio.wait_for(cmd_future, timeout=COMMAND_TIMEOUT)
+    except Exception as err:
+        cmd_future.cancel()
+        output = (
+            f"Command {ctx.command.name} with args {ctx.kwargs} raised error: {err}"
+        )
+        log.info(output)
+        raise
+    await reply(ctx, output)
+
+
+def wrap_send_return_string(
+    ctx: commands.Context, func: typing.Callable[P, str]
+) -> typing.Callable[..., None]:
+    async def _inner(*args: P.args, **kwargs: P.kwargs):
+        await ctx.send(func(*args, **kwargs))
+
+    return _inner
 
 
 @commands.hybrid_command(
@@ -33,13 +94,13 @@ async def echo(
     *,
     msg: str = commands.parameter(description="The message you want repeated"),
 ):
-    await ctx.send(msg)
+    await reply(ctx, msg)
 
 
 @echo.error
 async def echo_error(ctx: commands.Context, error):
     if isinstance(error, commands.errors.MissingRequiredArgument):
-        await ctx.send(f"There is only silence.")
+        await reply(ctx, f"There is only silence.")
 
 
 @commands.hybrid_command(
@@ -49,7 +110,7 @@ __**shrug**__
 Displays a shruggie: ¯\\_(ツ)_/¯""",
 )
 async def shrug(ctx: commands.Context):
-    await ctx.send(escape("¯\\_(ツ)_/¯"))
+    await reply(ctx, escape("¯\\_(ツ)_/¯"))
 
 
 @commands.hybrid_command(
@@ -96,7 +157,15 @@ async def roll(
     *,
     formula: str = commands.parameter(description="The dice roll formula to evaluate"),
 ):
-    # TODO subprocess compute for the dice roll output
+    await as_subprocess_command(ctx, _roll, formula)
+
+
+@roll.error
+async def roll_error(ctx: commands.Context, error):
+    await reply(ctx, f"{error}")
+
+
+def _roll(formula: str):
     output = "No result."
     try:
         roll_result = dice.roll(formula)
@@ -104,13 +173,7 @@ async def roll(
     except Exception as err:
         log.info(f"Roll error. {err}")
         output = f"Roll error.\n{codeblock(err, big=True)}"
-    await ctx.send(output)
-
-
-@roll.error
-async def roll_error(ctx: commands.Context, error):
-    if isinstance(error, commands.errors.HybridCommandError):
-        await ctx.send(f"{error}")
+    return output
 
 
 @commands.hybrid_command(
@@ -155,13 +218,13 @@ async def eject(
 　　  '　　  {remaincount}   　 • 　　 。
 
 　　ﾟ　　　.　　　.     　　　　.　       。"""
-    await ctx.send(message)
+    await reply(ctx, message)
 
 
 @eject.error
 async def eject_error(ctx: commands.Context, error):
     if isinstance(error, commands.errors.MemberNotFound):
-        await ctx.send(f"Sorry, I don't know who {error.argument} is.")
+        await reply(ctx, f"Sorry, I don't know who {error.argument} is.")
 
 
 class Cards(commands.Cog):
@@ -200,7 +263,7 @@ class Cards(commands.Cog):
     """,
     )
     async def cards(self, ctx):
-        await ctx.send(get_help_notice("cards"))
+        await reply(ctx, get_help_notice("cards"))
 
     @cards.command()
     async def draw(
@@ -211,32 +274,32 @@ class Cards(commands.Cog):
         ),
     ):
         deck = self.data.get_card_deck()
-        reply = f"{cards.draw(deck, count)}"
-        self.update_data(ctx, reply, deck)
-        await ctx.send(reply)
+        output = f"{cards.draw(deck, count)}"
+        self.update_data(ctx, output, deck)
+        await reply(ctx, output)
 
     @cards.command()
     async def reset(self, ctx: commands.Context):
         deck = cards.shuffle(cards.build_deck_52())
-        reply = "Deck reset and shuffled."
-        self.update_data(ctx, reply, deck)
-        await ctx.send(reply)
+        output = "Deck reset and shuffled."
+        self.update_data(ctx, output, deck)
+        await reply(ctx, output)
 
     @cards.command()
     async def shuffle(self, ctx: commands.Context):
         deck = cards.shuffle(self.data.get_card_deck())
-        reply = "Deck shuffled."
-        self.update_data(ctx, reply, deck)
-        await ctx.send(reply)
+        output = "Deck shuffled."
+        self.update_data(ctx, output, deck)
+        await reply(ctx, output)
 
     @cards.command()
     async def inspect(self, ctx: commands.Context):
         deck = self.data.get_card_deck()
         top = deck[len(deck) - 1] if len(deck) > 0 else None
         bot = deck[0] if len(deck) > 0 else None
-        reply = f"{len(deck)} cards in deck. Top card is {top}. Bottom card is {bot}."
-        self.update_data(ctx, reply, deck)
-        await ctx.send(reply)
+        output = f"{len(deck)} cards in deck. Top card is {top}. Bottom card is {bot}."
+        self.update_data(ctx, output, deck)
+        await reply(ctx, output)
 
     @cards.command()
     async def history(
@@ -248,8 +311,8 @@ class Cards(commands.Cog):
     ):
         history = self.data.get_card_logs()
         numbered = [f"{i+1}: {history[i]}" for i in range(len(history))][-count:]
-        reply = "\n".join(numbered)
+        output = "\n".join(numbered)
         if len(numbered) < count:
-            reply = "> start of history.\n" + reply
-        self.update_data(ctx, reply, self.data.get_card_deck())
-        await ctx.send(reply)
+            output = "> start of history.\n" + output
+        self.update_data(ctx, output, self.data.get_card_deck())
+        await reply(ctx, output)

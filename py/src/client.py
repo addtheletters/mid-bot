@@ -1,9 +1,10 @@
 # A bot client with some basic custom skills.
+import typing
 from config import *
 from discord.ext import commands
 from multiprocessing import Lock
 from multiprocessing.managers import SyncManager
-from pebble import ProcessPool
+
 from utils import *
 
 import cards
@@ -15,28 +16,6 @@ import os
 
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
-
-# Wrapper for ProcessPool to allow use with asyncio run_in_executor
-class PebbleExecutor(concurrent.futures.Executor):
-    def __init__(self, max_workers, timeout=None):
-        self.pool = ProcessPool(max_workers=max_workers)
-        self.timeout = timeout
-
-    def submit(self, fn, *args, **kwargs):
-        return self.pool.schedule(fn, args=args, timeout=self.timeout)
-
-    def map(self, func, *iterables, timeout=None, chunksize=1):
-        raise NotImplementedError("This wrapper does not support `map`.")
-
-    def shutdown(self, wait=True):
-        if wait:
-            log.info("Closing workers...")
-            self.pool.close()
-        else:
-            log.info("Stopping workers...")
-            self.pool.stop()
-        self.pool.join()
-        log.info("Workers joined.")
 
 
 # Internal data held by the client, synced to workers via a manager process.
@@ -66,14 +45,15 @@ class DataManager(SyncManager):
         SyncManager.__init__(self)
 
 
-# Bot client holding a pool of workers which are used to execute commands.
+# Bot client holding a pool of workers for running commands and a shared data manager.
 class MidClient(commands.Bot):
     misc_commands = [cmds.echo, cmds.shrug, cmds.roll, cmds.eject]
 
     def __init__(self):
         commands.Bot.__init__(
             self,
-            command_prefix=get_summon_prefix(),
+            command_prefix=commands.when_mentioned_or(get_summon_prefix()),
+            strip_after_prefix=True,
             intents=get_intents(),
             help_command=commands.DefaultHelpCommand(
                 # display text for commands without a category
@@ -82,7 +62,7 @@ class MidClient(commands.Bot):
                 paginator=commands.Paginator(prefix="", suffix=""),
             ),
         )
-        self.executor = PebbleExecutor(MAX_COMMAND_WORKERS, COMMAND_TIMEOUT)
+        self.executor = cmds.PebbleExecutor(MAX_COMMAND_WORKERS, COMMAND_TIMEOUT)
         self.sync_manager = None
         self.data = None
 
@@ -139,6 +119,8 @@ class MidClient(commands.Bot):
 
     async def register_commands(self):
         for cmd in MidClient.misc_commands:
+            # Since app commands cannot accept a >100 character description,
+            # swap that field for the brief when we register hybrid commands.
             cmds.swap_hybrid_command_description(cmd)
             self.add_command(cmd)
         await self.add_cog(cmds.Cards(self))

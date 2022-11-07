@@ -1,5 +1,6 @@
 # Utility functions.
 import discord
+from discord.ext import commands
 
 import config
 import logging
@@ -15,26 +16,31 @@ def escape(text):
 
 # Log message contents
 def log_message(msg):
-    log.info(f"({msg.id}) " +
-             f"{msg.created_at.isoformat(timespec='milliseconds')} " +
-             f"[{msg.channel}] <{msg.author}> {msg.content}")
+    log.info(
+        f"({msg.id}) "
+        + f"{msg.created_at.isoformat(timespec='milliseconds')} "
+        + f"[{msg.channel}] <{msg.author}> {msg.content}"
+    )
 
 
-# Send `text` in response to `msg`.
-async def reply(msg, text):
-    payload = f"{msg.author.mention} {text}"
+# Send `text` as a reply in the given context `ctx`.
+# Set `mention` to true to include an @ mention.
+async def reply(ctx: commands.Context, text: str, mention: bool = False):
+    payload = f"{ctx.author.mention if mention else ''}{text}"
     if len(payload) > config.MAX_MESSAGE_LENGTH:
         cutoff = len(payload) - config.MAX_MESSAGE_LENGTH
-        payload = payload[:config.MAX_MESSAGE_LENGTH]\
+        payload = (
+            payload[: config.MAX_MESSAGE_LENGTH]
             + f" ... (message too long, truncated {cutoff} characters.)"
-    await msg.channel.send(payload)
+        )
+    await ctx.send(payload)
 
 
 # Enclose `text` in a backticked codeblock.
 # Places zero-width spaces next to internal backtick characters to avoid
 # breaking out.
 def codeblock(text, big=False):
-    inner = str(text).replace('`', '`' + config.INVISIBLE_SPACE)
+    inner = str(text).replace("`", "`" + config.INVISIBLE_SPACE)
     if inner[0] == "`":
         inner = config.INVISIBLE_SPACE + inner
     if big:
@@ -42,6 +48,7 @@ def codeblock(text, big=False):
     return f"`{inner}`"
 
 
+# Get the intents flags required for MidClient.
 def get_intents():
     intents = discord.Intents.default()
     intents.message_content = True
