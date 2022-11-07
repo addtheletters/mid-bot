@@ -1,20 +1,19 @@
 # Commands.
-from collections import namedtuple
-import functools
-import typing
-from config import *
-from random import randint
-from utils import *
-
 import asyncio
-import cards
-import discord
-from discord.ext import commands
-import dice
-import logging
 import concurrent.futures
+import functools
+import logging
+import typing
+from collections import namedtuple
+from random import randint
 
+import cards
+import dice
+import discord
+from config import *
+from discord.ext import commands
 from pebble import ProcessPool
+from utils import *
 
 log = logging.getLogger(__name__)
 
@@ -69,15 +68,6 @@ async def as_subprocess_command(
         log.info(output)
         raise
     await reply(ctx, output)
-
-
-def wrap_send_return_string(
-    ctx: commands.Context, func: typing.Callable[P, str]
-) -> typing.Callable[..., None]:
-    async def _inner(*args: P.args, **kwargs: P.kwargs):
-        await ctx.send(func(*args, **kwargs))
-
-    return _inner
 
 
 @commands.hybrid_command(

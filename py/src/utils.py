@@ -1,10 +1,9 @@
 # Utility functions.
-import discord
-from discord.ext import commands
-
-import config
 import logging
 
+import config
+import discord
+from discord.ext import commands
 
 log = logging.getLogger(__name__)
 

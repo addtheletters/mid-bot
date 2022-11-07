@@ -1,8 +1,9 @@
 # Run the bot client.
-from client import MidClient
-from dotenv import load_dotenv
 import logging
 import os
+
+from client import MidClient
+from dotenv import load_dotenv
 
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)

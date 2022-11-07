@@ -1,18 +1,15 @@
 # A bot client with some basic custom skills.
-import typing
-from config import *
-from discord.ext import commands
+import logging
+import os
 from multiprocessing import Lock
 from multiprocessing.managers import SyncManager
 
-from utils import *
-
 import cards
 import cmds
-import concurrent.futures
 import discord
-import logging
-import os
+from config import *
+from discord.ext import commands
+from utils import *
 
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
