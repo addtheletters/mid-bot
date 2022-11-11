@@ -48,8 +48,8 @@ P = typing.ParamSpec("P")
 
 
 async def as_subprocess_command(
-    ctx: commands.Context, func: typing.Callable[..., str], *args, **kwargs
-) -> str:
+    ctx: commands.Context, func: typing.Callable[..., any], *args, **kwargs
+) -> any:
     loop: asyncio.AbstractEventLoop = ctx.bot.loop
     executor: PebbleExecutor = ctx.bot.executor
     cmd_future = loop.run_in_executor(
@@ -156,7 +156,7 @@ async def roll_error(ctx: commands.Context, error):
     await reply(ctx, f"{error}")
 
 
-def _roll(formula: str):
+def _roll(formula: str) -> str:
     output = "No result."
     try:
         roll_result = dice.roll(formula)
@@ -218,7 +218,7 @@ async def eject_error(ctx: commands.Context, error):
         await reply(ctx, f"Sorry, I don't know who {error.argument} is.")
 
 
-class CardsCog(commands.Cog):
+class CardsCog(commands.Cog, name="Cards"):
     def __init__(self, bot):
         self.bot = bot
         self.data = bot.get_client_data()
@@ -265,7 +265,7 @@ class CardsCog(commands.Cog):
         ),
     ):
         cdeck = self.data.get_card_deck()
-        output = f"{cards.draw(cdeck, count)}"
+        output = cards.draw(cdeck, count)
         self.update_data(ctx, output, cdeck)
         await reply(ctx, output)
 
