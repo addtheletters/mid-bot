@@ -1,11 +1,11 @@
 # A bot client with some basic custom skills.
 import logging
 import os
-from multiprocessing import Lock
 from multiprocessing.managers import SyncManager
 
 import cards
 import cmds
+from cmds import CardsCog
 import discord
 from config import *
 from discord.ext import commands
@@ -120,4 +120,4 @@ class MidClient(commands.Bot):
             # swap that field for the brief when we register hybrid commands.
             cmds.swap_hybrid_command_description(cmd)
             self.add_command(cmd)
-        await self.add_cog(cmds.Cards(self))
+        await self.add_cog(CardsCog(self))

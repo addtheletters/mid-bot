@@ -49,7 +49,7 @@ P = typing.ParamSpec("P")
 
 async def as_subprocess_command(
     ctx: commands.Context, func: typing.Callable[..., str], *args, **kwargs
-) -> None:
+) -> str:
     loop: asyncio.AbstractEventLoop = ctx.bot.loop
     executor: PebbleExecutor = ctx.bot.executor
     cmd_future = loop.run_in_executor(
@@ -67,7 +67,7 @@ async def as_subprocess_command(
         )
         log.info(output)
         raise
-    await reply(ctx, output)
+    return output
 
 
 @commands.hybrid_command(
@@ -147,7 +147,8 @@ async def roll(
     *,
     formula: str = commands.parameter(description="The dice roll formula to evaluate"),
 ):
-    await as_subprocess_command(ctx, _roll, formula)
+    output = await as_subprocess_command(ctx, _roll, formula)
+    await reply(ctx, output)
 
 
 @roll.error
@@ -217,11 +218,11 @@ async def eject_error(ctx: commands.Context, error):
         await reply(ctx, f"Sorry, I don't know who {error.argument} is.")
 
 
-class Cards(commands.Cog):
+class CardsCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.data = bot.get_client_data()
-        swap_hybrid_command_description(self.cards)
+        swap_hybrid_command_description(self.deck)
 
     def update_data(
         self, ctx: commands.Context, reply: str, new_deck: typing.Sequence[cards.Card]
@@ -234,28 +235,28 @@ class Cards(commands.Cog):
         )
 
     @commands.hybrid_group(
-        aliases=["c"],
+        aliases=["d"],
         brief="Deal with cards",
         description=f"""
-    __**cards**__
+    __**deck**__
     Throws out cards from a 52-card deck. (Direct-message the bot to receive cards in secret.)
     The following subcommands are available:
-    __draw__ `{get_summon_prefix()}cards draw <count>`
+    __draw__ `{get_summon_prefix()}deck draw <count>`
         Draw `<count>` cards from the deck.
-    __reset__ `{get_summon_prefix()}cards reset`
+    __reset__ `{get_summon_prefix()}deck reset`
         Reset the deck.
-    __shuffle__ `{get_summon_prefix()}cards shuffle`
+    __shuffle__ `{get_summon_prefix()}deck shuffle`
         Shuffle the remaining cards in the deck.
-    __inspect__ `{get_summon_prefix()}cards inspect`
+    __inspect__ `{get_summon_prefix()}deck inspect`
         Check the number of cards remaining in the deck, and peek at the top and bottom cards.
-    __history__ `{get_summon_prefix()}cards history <count>`
+    __history__ `{get_summon_prefix()}deck history <count>`
         View `<count>` past actions performed using this command.
     """,
     )
-    async def cards(self, ctx):
-        await reply(ctx, get_help_notice("cards"))
+    async def deck(self, ctx):
+        await reply(ctx, get_help_notice("deck"))
 
-    @cards.command()
+    @deck.command()
     async def draw(
         self,
         ctx: commands.Context,
@@ -263,35 +264,35 @@ class Cards(commands.Cog):
             description="How many cards to draw", default=1
         ),
     ):
-        deck = self.data.get_card_deck()
-        output = f"{cards.draw(deck, count)}"
-        self.update_data(ctx, output, deck)
+        cdeck = self.data.get_card_deck()
+        output = f"{cards.draw(cdeck, count)}"
+        self.update_data(ctx, output, cdeck)
         await reply(ctx, output)
 
-    @cards.command()
+    @deck.command()
     async def reset(self, ctx: commands.Context):
-        deck = cards.shuffle(cards.build_deck_52())
+        cdeck = cards.shuffle(cards.build_deck_52())
         output = "Deck reset and shuffled."
-        self.update_data(ctx, output, deck)
+        self.update_data(ctx, output, cdeck)
         await reply(ctx, output)
 
-    @cards.command()
+    @deck.command()
     async def shuffle(self, ctx: commands.Context):
-        deck = cards.shuffle(self.data.get_card_deck())
+        cdeck = cards.shuffle(self.data.get_card_deck())
         output = "Deck shuffled."
-        self.update_data(ctx, output, deck)
+        self.update_data(ctx, output, cdeck)
         await reply(ctx, output)
 
-    @cards.command()
+    @deck.command()
     async def inspect(self, ctx: commands.Context):
-        deck = self.data.get_card_deck()
-        top = deck[len(deck) - 1] if len(deck) > 0 else None
-        bot = deck[0] if len(deck) > 0 else None
-        output = f"{len(deck)} cards in deck. Top card is {top}. Bottom card is {bot}."
-        self.update_data(ctx, output, deck)
+        cdeck = self.data.get_card_deck()
+        top = cdeck[len(cdeck) - 1] if len(cdeck) > 0 else None
+        bot = cdeck[0] if len(cdeck) > 0 else None
+        output = f"{len(cdeck)} cards in deck. Top card is {top}. Bottom card is {bot}."
+        self.update_data(ctx, output, cdeck)
         await reply(ctx, output)
 
-    @cards.command()
+    @deck.command()
     async def history(
         self,
         ctx: commands.Context,
