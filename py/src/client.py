@@ -56,14 +56,15 @@ class MidClient(commands.Bot):
 
         TEST_GUILD_ID = os.getenv("TEST_GUILD_ID")
         if TEST_GUILD_ID != None:
-            log.info(f"Got test guild id: {TEST_GUILD_ID}; will sync app commands")
+            log.info(f"Got test guild id: {TEST_GUILD_ID}; will sync app commands to test guild")
             TEST_GUILD = (
                 discord.Object(id=int(TEST_GUILD_ID)) if TEST_GUILD_ID else None
             )
             self.tree.copy_global_to(guild=TEST_GUILD)
             await self.tree.sync(guild=TEST_GUILD)
         else:
-            log.warn(f"No test guild id; not syncing app commands")
+            log.warn(f"No test guild id; only syncing tree to global. May take time for commands to appear.")
+            await self.tree.sync()
         return
 
     # Override, near-identical to discord.Client.start().
