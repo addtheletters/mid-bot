@@ -2,6 +2,7 @@ name: Deploy-Heroku
 
 # Trigger on push to heroku-deploy branch
 on:
+  workflow_dispatch:
   push:
     branches: [ heroku-deploy ]
 
@@ -10,8 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-    - uses: actions/checkout@v2
-    - uses: AkhileshNS/heroku-deploy@v3.2.6
+    - uses: actions/checkout@v3
+    - uses: AkhileshNS/heroku-deploy@v3.12.12
       with:
         heroku_api_key: ${{secrets.HEROKU_API_KEY}}
         heroku_email: ${{secrets.HEROKU_EMAIL}}
