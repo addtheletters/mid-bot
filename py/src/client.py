@@ -3,38 +3,15 @@ import logging
 import os
 from multiprocessing.managers import SyncManager
 
-import cards
 import cmds
 import discord
-from cardscog import Cards
+from cardscog import Cards, CardsData
 from config import *
 from discord.ext import commands
 from utils import *
 
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
-
-
-# Internal data held by the client, synced to workers via a manager process.
-class ClientData:
-    def __init__(self):
-        self.card_deck = cards.shuffle(cards.build_deck_52())
-        self.card_logs = []
-
-    def get_card_deck(self):
-        return self.card_deck
-
-    def set_card_deck(self, deck):
-        self.card_deck = deck
-
-    def get_card_logs(self):
-        return self.card_logs
-
-    def clear_card_logs(self):
-        self.card_logs = []
-
-    def add_card_log(self, message):
-        self.card_logs.append(message)
 
 
 class DataManager(SyncManager):
@@ -45,6 +22,8 @@ class DataManager(SyncManager):
 # Bot client holding a pool of workers for running commands and a shared data manager.
 class MidClient(commands.Bot):
     misc_commands = [cmds.echo, cmds.shrug, cmds.roll, cmds.eject]
+    cogs = [Cards]
+    managed_types: dict = {"CardsData": CardsData}
 
     def __init__(self):
         commands.Bot.__init__(
@@ -61,10 +40,12 @@ class MidClient(commands.Bot):
         )
         self.executor = cmds.PebbleExecutor(MAX_COMMAND_WORKERS, COMMAND_TIMEOUT)
         self.sync_manager = None
-        self.data = None
 
-    def get_client_data(self):
-        return self.data
+    def get_sync_manager(self) -> DataManager:
+        return self.sync_manager
+
+    def get_executor(self) -> cmds.PebbleExecutor:
+        return self.executor
 
     async def setup_hook(self) -> None:
         await super().setup_hook()
@@ -102,11 +83,12 @@ class MidClient(commands.Bot):
         if self.sync_manager != None:
             log.info("Sync manager already started.")
             return
-        DataManager.register("Data", ClientData)
+        for key, type in MidClient.managed_types.items():
+            log.info(f"managing data type {key}: {type}")
+            DataManager.register(key, type)
         self.sync_manager = DataManager()
         self.sync_manager.start()
         log.info("Sync manager started.")
-        self.data = self.sync_manager.Data()
 
     async def on_ready(self):
         log.info(
@@ -116,8 +98,7 @@ class MidClient(commands.Bot):
 
     async def register_commands(self):
         for cmd in MidClient.misc_commands:
-            # Since app commands cannot accept a >100 character description,
-            # swap that field for the brief when we register hybrid commands.
             cmds.swap_hybrid_command_description(cmd)
             self.add_command(cmd)
-        await self.add_cog(Cards(self))
+        for cog in MidClient.cogs:
+            await self.add_cog(cog(self))

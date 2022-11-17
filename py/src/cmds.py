@@ -37,6 +37,8 @@ class PebbleExecutor(concurrent.futures.Executor):
         log.info("Workers joined.")
 
 
+# Since app commands cannot accept a >100 character description,
+# swap that field for the brief when we register hybrid commands.
 def swap_hybrid_command_description(hybrid: commands.HybridCommand):
     hybrid.app_command.description = hybrid.brief
 
@@ -48,7 +50,7 @@ async def as_subprocess_command(
     ctx: commands.Context, func: typing.Callable[..., any], *args, **kwargs
 ) -> any:
     loop: asyncio.AbstractEventLoop = ctx.bot.loop
-    executor: PebbleExecutor = ctx.bot.executor
+    executor: PebbleExecutor = ctx.bot.get_executor()
     cmd_future = loop.run_in_executor(
         executor, functools.partial(func, *args, **kwargs)
     )
