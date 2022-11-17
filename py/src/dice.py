@@ -3,12 +3,12 @@
 
 import collections
 import itertools
-import operator
 import re
 from functools import total_ordering
 from math import factorial, sqrt
 from random import randint
-from utils import escape, codeblock
+
+from utils import codeblock, escape
 
 ProtoToken = collections.namedtuple("ProtoToken", ["type", "value"])
 

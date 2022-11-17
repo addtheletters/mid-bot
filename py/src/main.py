@@ -1,8 +1,9 @@
 # Run the bot client.
-from client import MidClient
-from dotenv import load_dotenv
 import logging
 import os
+
+from client import MidClient
+from dotenv import load_dotenv
 
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -12,7 +13,8 @@ load_dotenv()
 # Get the discord token from the environment.
 TOKEN = os.getenv("DISCORD_TOKEN")
 if TOKEN == None:
-    log.error("Discord token is missing!")
+    log.error("Discord token is missing! Set the DISCORD_TOKEN environment variable.")
+    exit()
 
 if __name__ == "__main__":
     log.info("Starting bot...")

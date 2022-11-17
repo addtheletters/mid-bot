@@ -1,2 +1,5 @@
 # env var secrets
 .env
+
+# vscode workspace settings
+.vscode

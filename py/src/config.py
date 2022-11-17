@@ -1,6 +1,9 @@
 # Configuration and constants.
 
-DEFAULT_SUMMON_PREFIX = "~"
+# DISCORD_TOKEN # is expected in the environment
+# TEST_GUILD_ID # can be provided in the environment
+
+DEFAULT_SUMMON_PREFIX = "~!"
 DEFAULT_HELP_KEY = "help"
 MAX_MESSAGE_LENGTH = 1900
 MAX_COMMAND_WORKERS = 5
