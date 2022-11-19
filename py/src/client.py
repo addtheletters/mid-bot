@@ -22,7 +22,7 @@ class DataManager(SyncManager):
 # Bot client holding a pool of workers for running commands and a shared data manager.
 class MidClient(commands.Bot):
     misc_commands = [cmds.echo, cmds.shrug, cmds.roll, cmds.eject]
-    cogs = [Cards]
+    misc_cogs = [Cards]
     managed_types: dict = {"CardsData": CardsData}
 
     def __init__(self):
@@ -101,5 +101,5 @@ class MidClient(commands.Bot):
         for cmd in MidClient.misc_commands:
             cmds.swap_hybrid_command_description(cmd)
             self.add_command(cmd)
-        for cog in MidClient.cogs:
+        for cog in MidClient.misc_cogs:
             await self.add_cog(cog(self))
