@@ -2,7 +2,7 @@
 
 mid-bot is a barebones discord bot that can roll dice and shrug profusely.
 
-Pushes to the `heroku-deploy` Github branch are automatically deployed to Heroku by a Github workflow.
+New published releases are automatically deployed to an OCP instance by a Github workflow.
 
 Run the bot locally:
 - Install the dependencies listed in `requirements.txt`. (`pip install -r requirements.txt`)
