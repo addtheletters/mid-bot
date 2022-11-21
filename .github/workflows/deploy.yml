@@ -14,9 +14,7 @@ jobs:
   # Will run the bot within a tmux session, attempting to kill a previously running session of the same name.
   deploy:
     runs-on: ubuntu-latest
-    environment:
-      name: OCP Static Deployment
-      url: ${{ secrets.ENVIRONMENT_URL }}
+    environment: OCP Static Deployment
     steps:
       # ssh configuration based on https://blog.benoitblanchon.fr/github-action-run-ssh-commands/
       - name: Configure SSH
@@ -36,7 +34,9 @@ jobs:
             StrictHostKeyChecking no
           END
       - name: Stop bot
-        run: ssh deployment 'tmux kill-session -t ${{ secrets.TMUX_SESSION_NAME }}'
+        env:
+          SESSION: ${{ secrets.TMUX_SESSION_NAME }}
+        run: ssh deployment "tmux kill-session -t $SESSION"
         continue-on-error: true
       - name: Check out at latest tag
         run: |
@@ -56,8 +56,10 @@ jobs:
             DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
         run: ssh deployment "echo 'DISCORD_TOKEN=$DISCORD_TOKEN' > ~/mid-bot/.env"
       - name: Run bot
+        env:
+            SESSION: ${{ secrets.TMUX_SESSION_NAME }}
         run: |
-          ssh deployment '
+          ssh deployment "
             cd mid-bot
-            tmux new-session -d -s ${{ secrets.TMUX_SESSION_NAME }} "~/mid-bot/run_bot.sh"
-          '
+            tmux new-session -d -s $SESSION '~/mid-bot/run_bot.sh'
+          "
