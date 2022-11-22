@@ -1,7 +1,6 @@
 # Dicerolling.
 # Parser and evaluator for dice roll inputs.
 
-import collections
 import itertools
 import re
 from functools import total_ordering
@@ -10,12 +9,9 @@ from random import randint
 
 from utils import codeblock, escape
 
-ProtoToken = collections.namedtuple("ProtoToken", ["type", "value"])
-
-KEYWORDS = [
-    "C", "choose", "repeat", "sqrt", "fact", "agg"
-]
-KEYWORD_PATTERN = '|'.join(KEYWORDS)
+KEYWORDS = ["C", "choose", "repeat", "sqrt", "fact", "agg"]
+KEYWORD_PATTERN = "|".join(KEYWORDS)
+# fmt: off
 TOKEN_SPEC = [
     ("NUMBER",   r"\d+(\.\d*)?"),               # Integer or decimal number
     ("KEYWORD",  KEYWORD_PATTERN),              # Keywords
@@ -31,6 +27,7 @@ TOKEN_SPEC = [
 ]
 TOKEN_PATTERN = re.compile(
     '|'.join(f"(?P<{pair[0]}>{pair[1]})" for pair in TOKEN_SPEC))
+# fmt: on
 
 EXPLOSION_CAP = 9999
 
@@ -49,20 +46,22 @@ ARITHMETICS = {
     "*": lambda x, y: x * y,
     "/": lambda x, y: x / y,
     "%": lambda x, y: x % y,
-    "^": lambda x, y: x ** y,
+    "^": lambda x, y: x**y,
 }
 
 
-# Cut input into tokens.
-# Based on tokenizer sample from the python docs.
-# https://docs.python.org/3.6/library/re.html#regular-expression-examples
-def tokenize(intext):
-    tokens = []
+# Tokenizes a formula to symbol instances and divides them into individual rolls.
+def symbolize(symbol_table, intext: str):
+    all_rolls = []
+    current_roll = []
+
     for item in TOKEN_PATTERN.finditer(intext):
+        # Cut input into tokens.
+        # https://docs.python.org/3.6/library/re.html#regular-expression-examples
         kind = item.lastgroup  # group name
         value = item.group()
         if kind == "NUMBER":
-            if '.' in value:
+            if "." in value:
                 value = float(value)
             else:
                 value = int(value)
@@ -72,33 +71,27 @@ def tokenize(intext):
         elif kind == "MISMATCH":
             raise RuntimeError(f"Couldn't interpret <{value}> from: {intext}")
 
-        tokens.append(ProtoToken(kind, value))
-    return tokens
-
-
-# Convert tokens to symbol instances and divide them into individual rolls.
-def symbolize(symbol_table, tokens):
-    all_rolls = []
-    current_roll = []
-    for pretoken in tokens:
-        symbol_id = pretoken.type
-        if pretoken.type in ("OP", "DICE", "KEYWORD", "SEP", "COMP", "EXPLODE", "DCOMP"):
-            symbol_id = pretoken.value
+        # determine the symbol type
+        symbol_id = kind
+        if kind in ("OP", "DICE", "KEYWORD", "SEP", "COMP", "EXPLODE", "DCOMP"):
+            symbol_id = value
         try:  # look up symbol type
             symbol = symbol_table[symbol_id]
         except KeyError:
-            raise SyntaxError(
-                f"Failed to find symbol type for {pretoken}")
+            raise SyntaxError(f"Failed to find symbol type for {symbol_id}")
 
+        # construct the symbol instance and populate its value if needed
         token = symbol()
-        if pretoken.type == "NUMBER":
-            token._value = pretoken.value
+        if kind == "NUMBER":
+            token._value = value
         current_roll.append(token)
 
-        if pretoken.type == "END":
+        # if reached an end token, wrap up the current roll
+        if kind == "END":
             all_rolls.append(current_roll)
             current_roll = []
 
+    # end the final roll if no explicit END token is found
     if len(current_roll) > 0:
         if current_roll[-1]._kind != "END":
             current_roll.append(symbol_table["END"]())
@@ -106,7 +99,7 @@ def symbolize(symbol_table, tokens):
     return all_rolls
 
 
-def force_integral(value, description=""):
+def force_integral(value, description="") -> int:
     if isinstance(value, int):
         return value
     if isinstance(value, float) and value.is_integer():
@@ -115,7 +108,7 @@ def force_integral(value, description=""):
         raise ValueError(f"Expected integer # {description}: {value}")
 
 
-def single_roll(size):
+def single_roll(size) -> int:
     if size == 0:
         return 0
     else:
@@ -166,9 +159,9 @@ def dice_drop(dice, n, high=False, keep=False):
         return new_values
 
     # sort and pair with indices
-    sdice = sorted(list(enumerate(dice.get_all_items())),
-                   key=lambda x: x[1],
-                   reverse=high ^ keep)
+    sdice = sorted(
+        list(enumerate(dice.get_all_items())), key=lambda x: x[1], reverse=high ^ keep
+    )
     # remove already dropped
     sdice = list(filter(lambda x: x[0] not in dice.dropped, sdice))
     # find n more to drop
@@ -212,12 +205,9 @@ def dice_explode(dice, condition=None, max_explosion=EXPLOSION_CAP):
 # `condition` should be a lambda function returning True for a success.
 def success_filter(dice, condition):
     if not isinstance(dice, CollectedValues):
-        raise SyntaxError(
-            "Can't filter for successes (operand not a collection)")
+        raise SyntaxError("Can't filter for successes (operand not a collection)")
 
-    new_values = SuccessValues(items=dice.items,
-                               dropped=dice.dropped,
-                               added=dice.added)
+    new_values = SuccessValues(items=dice.items, dropped=dice.dropped, added=dice.added)
     failures = []
     for pair in enumerate(dice.get_remaining()):
         if not condition(pair[1]):
@@ -232,10 +222,13 @@ def aggregate_using(collected, agg_func, agg_joiner=", "):
     if not isinstance(collected, CollectedValues):
         raise SyntaxError("Can't aggregate (operand not a collection)")
 
-    new_values = AggregateValues(agg_func, agg_joiner,
-                                 items=collected.items,
-                                 dropped=collected.dropped,
-                                 added=collected.added)
+    new_values = AggregateValues(
+        agg_func,
+        agg_joiner,
+        items=collected.items,
+        dropped=collected.dropped,
+        added=collected.added,
+    )
     return new_values
 
 
@@ -276,7 +269,6 @@ class ExprResult:
 # storing only the final value and description strings.
 @total_ordering
 class FlatExpr(ExprResult):
-
     def __init__(self, value, description, subrepr):
         self.value = value
         self.description = description
@@ -304,7 +296,6 @@ class FlatExpr(ExprResult):
 # could have been added to or dropped from.
 # Items are expected to be repr'able, either a literal value or ExprResult
 class CollectedValues(ExprResult):
-
     def __init__(self, items=None, dropped=None, added=None):
         super().__init__()
         # dropped and added are lists of item indices, not items themselves
@@ -316,9 +307,9 @@ class CollectedValues(ExprResult):
         return f"{len(self.items)} item" + ("s" if len(self.items) != 1 else "")
 
     def copy(self):
-        return CollectedValues(self.items.copy(),
-                               self.dropped.copy(),
-                               self.added.copy())
+        return CollectedValues(
+            self.items.copy(), self.dropped.copy(), self.added.copy()
+        )
 
     # Override. Default to returning the sum of non-dropped items.
     def get_value(self):
@@ -336,8 +327,11 @@ class CollectedValues(ExprResult):
     # Override to list collection contents.
     def get_description(self, joiner=", "):
         out = joiner.join(
-            [self.format_item(ExprResult.description(self.items[i]), i)
-                for i in range(len(self.items))])
+            [
+                self.format_item(ExprResult.description(self.items[i]), i)
+                for i in range(len(self.items))
+            ]
+        )
         return out
 
     # Returns all items, including dropped ones.
@@ -369,13 +363,13 @@ class CollectedValues(ExprResult):
 # Represents several expressions' results collected together by one operator,
 # such as `repeat()`.
 class MultiExpr(CollectedValues):
-
     def __init__(self, contents=None, copy_source=None):
         if copy_source != None:
             super().__init__(
                 items=copy_source.items.copy(),
                 dropped=copy_source.dropped.copy(),
-                added=copy_source.added.copy())
+                added=copy_source.added.copy(),
+            )
         else:
             super().__init__(items=contents)
 
@@ -394,15 +388,19 @@ class MultiExpr(CollectedValues):
     def get_description(self, joiner="\n"):
         out = "{\n"
         out += joiner.join(
-            [self.format_item(f"**{str(self.items[i])}**  |  {ExprResult.description(self.items[i])}", i)
-                for i in range(len(self.items))])
+            [
+                self.format_item(
+                    f"**{str(self.items[i])}**  |  {ExprResult.description(self.items[i])}",
+                    i,
+                )
+                for i in range(len(self.items))
+            ]
+        )
         return out + "\n}"
 
 
 class DiceValues(CollectedValues):
-
-    def __init__(self, dice_size, negated=False,
-                 items=None, dropped=None, added=None):
+    def __init__(self, dice_size, negated=False, items=None, dropped=None, added=None):
         super().__init__(items, dropped, added)
         self.dice_size = dice_size
         self.negated = negated
@@ -411,10 +409,13 @@ class DiceValues(CollectedValues):
         return str(self.get_value())
 
     def copy(self):
-        return DiceValues(self.dice_size, self.negated,
-                          self.items.copy(),
-                          self.dropped.copy(),
-                          self.added.copy())
+        return DiceValues(
+            self.dice_size,
+            self.negated,
+            self.items.copy(),
+            self.dropped.copy(),
+            self.added.copy(),
+        )
 
     def get_value(self):
         return super().get_value() * (-1 if self.negated else 1)
@@ -431,7 +432,6 @@ class DiceValues(CollectedValues):
 # some number of dice rolls that successful meet some operator's condition.
 # Total value is evaluated to the number of non-dropped items remaining.
 class SuccessValues(CollectedValues):
-
     def __init__(self, items=None, dropped=None, added=None):
         super().__init__(items, dropped, added)
 
@@ -439,34 +439,32 @@ class SuccessValues(CollectedValues):
         return f"{self.get_value()} success" + ("es" if self.get_value() != 1 else "")
 
     def copy(self):
-        return SuccessValues(self.items.copy(),
-                             self.dropped.copy(),
-                             self.added.copy())
+        return SuccessValues(self.items.copy(), self.dropped.copy(), self.added.copy())
 
     def get_value(self):
         return self.get_remaining_count()
 
     def get_description(self):
-        return "(" + super().get_description()\
-            + ")⇒" + str(self)
+        return "(" + super().get_description() + ")⇒" + str(self)
 
 
 class AggregateValues(CollectedValues):
-
-    def __init__(self, agg_func, agg_joiner,
-                 items=None, dropped=None, added=None):
+    def __init__(self, agg_func, agg_joiner, items=None, dropped=None, added=None):
         super().__init__(items, dropped, added)
-        self.agg_func = agg_func      # lambda function to aggregate with
+        self.agg_func = agg_func  # lambda function to aggregate with
         self.agg_joiner = agg_joiner  # string representing operator used to aggregate
 
     def __repr__(self):
         return str(self.get_value())
 
     def copy(self):
-        return AggregateValues(self.agg_func, self.agg_joiner,
-                               self.items.copy(),
-                               self.dropped.copy(),
-                               self.added.copy())
+        return AggregateValues(
+            self.agg_func,
+            self.agg_joiner,
+            self.items.copy(),
+            self.dropped.copy(),
+            self.added.copy(),
+        )
 
     # Override to apply aggregate operation.
     def total(self):
@@ -475,9 +473,11 @@ class AggregateValues(CollectedValues):
     # Override to wrap items in parens if necessary.
     def format_item(self, base, index):
         wrap = base
-        if isinstance(self.items[index], ExprResult)\
-                and (base[0] != "(" or base[-1] != ")")\
-                and (base[0] != "[" or base[-1] != "]"):
+        if (
+            isinstance(self.items[index], ExprResult)
+            and (base[0] != "(" or base[-1] != ")")
+            and (base[0] != "[" or base[-1] != "]")
+        ):
             wrap = "(" + base + ")"
         return super().format_item(wrap, index)
 
@@ -507,8 +507,7 @@ class Evaluator:
             self.token_current = self.token_list[token_pos]
             self.iter_pos = token_pos
         except IndexError as err:
-            raise IndexError(
-                f"Can't iterate from token position {token_pos}") from err
+            raise IndexError(f"Can't iterate from token position {token_pos}") from err
         return self.token_current
 
     def _next(self):
@@ -516,8 +515,7 @@ class Evaluator:
             self.token_current = self.token_list[self.iter_pos + 1]
             self.iter_pos += 1
         except (StopIteration, IndexError) as err:
-            raise StopIteration(
-                f"Expected further input. Missing operands?") from err
+            raise StopIteration(f"Expected further input. Missing operands?") from err
         return self.token_current
 
     def _current(self):
@@ -581,11 +579,19 @@ class Evaluator:
         # This should resemble the original input, but with whitespace removed
         # and possible parentheses inserted for clarity.
         def describe(self, uneval=False, predrop=False):
-            describe_first = self.first.describe(uneval=uneval,
-                                                 predrop=(self.is_dropkeepadd() or (predrop and self.is_collection())))\
-                if self.first != None else ""
-            describe_second = self.second.describe(uneval=uneval)\
-                if self.second != None else ""
+            describe_first = (
+                self.first.describe(
+                    uneval=uneval,
+                    predrop=(
+                        self.is_dropkeepadd() or (predrop and self.is_collection())
+                    ),
+                )
+                if self.first != None
+                else ""
+            )
+            describe_second = (
+                self.second.describe(uneval=uneval) if self.second != None else ""
+            )
 
             if self._kind == "(":  # parenthesis group
                 return "(" + describe_first + ")"
@@ -608,11 +614,13 @@ class Evaluator:
                     return ExprResult.description(self.detail)
 
                 if self.detail:
-                    detail_description = " " + \
-                        ExprResult.description(self.detail)
+                    detail_description = " " + ExprResult.description(self.detail)
                 if self.is_collection():
                     # Hide breakout detail description if only one item
-                    if len(self.detail.get_all_items()) < 2 and self.detail.get_value() != None:
+                    if (
+                        len(self.detail.get_all_items()) < 2
+                        and self.detail.get_value() != None
+                    ):
                         detail_description = "⇒" + str(self.detail)
                     # Hide details if outer collection already will show them
                     if predrop:
@@ -641,8 +649,7 @@ class Evaluator:
             if not uneval:
                 op = escape(self._kind)
 
-            prewrap = f"{left}{spacer}{op}{spacer}{right}" +\
-                f"{detail_description}"
+            prewrap = f"{left}{spacer}{op}{spacer}{right}" + f"{detail_description}"
 
             if self._kind == "choose" or self._kind == "C":
                 return "(" + prewrap + ")"
@@ -676,9 +683,23 @@ class Evaluator:
             return self._kind == "d" or self.is_dropkeepadd()
 
         def is_dropkeepadd(self):
-            return self._kind in ("dl", "dh", "kl", "kh",
-                                  "!", "!>", "!<", "!>=", "!<=", "!=",
-                                  "?>", "?<", "?>=", "?<=", "?=")
+            return self._kind in (
+                "dl",
+                "dh",
+                "kl",
+                "kh",
+                "!",
+                "!>",
+                "!<",
+                "!>=",
+                "!<=",
+                "!=",
+                "?>",
+                "?<",
+                "?>=",
+                "?<=",
+                "?=",
+            )
 
         # Is this node dice, or does any node in this subtree have dice?
         def contains_diceroll(self):
@@ -707,8 +728,10 @@ class Evaluator:
         try:
             s = Evaluator.SYMBOL_TABLE[symbol_kind]
         except KeyError:
+
             class s(Evaluator._Symbol):
                 pass
+
             s.__name__ = "symbol-" + symbol_kind
             s.__qualname__ = "symbol-" + symbol_kind
             s._kind = symbol_kind
@@ -725,6 +748,7 @@ class Evaluator:
             self.second = None
             func(self, self.first)
             return self
+
         s = Evaluator.register_symbol(kind)  # don't assign to bp for prefix
         s.as_prefix = _as_prefix
         return s
@@ -733,10 +757,10 @@ class Evaluator:
     def register_infix(kind, func, bind_power, right_assoc=False):
         def _as_infix(self, evaluator, left):
             self.first = left
-            self.second = evaluator.expr(
-                bind_power - (1 if right_assoc else 0))
+            self.second = evaluator.expr(bind_power - (1 if right_assoc else 0))
             func(self, self.first, self.second)
             return self
+
         s = Evaluator.register_symbol(kind, bind_power)
         s.as_infix = _as_infix
         return s
@@ -751,6 +775,7 @@ class Evaluator:
             self.second = None
             func(self, self.first)
             return self
+
         s = Evaluator.register_symbol(kind, bind_power)
         s.as_infix = _as_postfix
         s._postfix = True
@@ -768,6 +793,7 @@ class Evaluator:
             evaluator.advance(")")
             func(self, self.first)
             return self
+
         s = Evaluator.register_symbol(kind)
         s.as_prefix = _as_function
         s._function_like = True
@@ -784,6 +810,7 @@ class Evaluator:
             evaluator.advance(")")
             func(self, self.first, self.second, evaluator)
             return self
+
         s = Evaluator.register_symbol(kind)
         s.as_prefix = _as_function
         s._function_like = True
@@ -798,12 +825,11 @@ class Evaluator:
         return ret
 
 
-def roll(intext):
-    if len(intext) < 1:
-        raise ValueError("Nothingness rolls eternal.")
+def roll(formula: str):
+    if len(formula) < 1:
+        raise ValueError("Roll formula is empty.")
     results = []
-    pretokens = tokenize(intext)
-    rolls = symbolize(Evaluator.SYMBOL_TABLE, pretokens)
+    rolls = symbolize(Evaluator.SYMBOL_TABLE, formula)
     for roll in rolls:
         e = Evaluator(roll)
         results.append(e.evaluate())
@@ -814,9 +840,11 @@ def format_roll_results(results):
     out = ""
     for row in results:
         final_value = row.final_repr()
-        out += codeblock(row.describe(uneval=True)) +\
-            f" ⇒ **{final_value}**" +\
-            f"  |  {row.describe()}"
+        out += (
+            codeblock(row.describe(uneval=True))
+            + f" ⇒ **{final_value}**"
+            + f"  |  {row.describe()}"
+        )
         out += "\n"
     return out
 
@@ -888,16 +916,16 @@ def _repeat_function(node, x, y, ev):
         node.detail = MultiExpr()
         return
 
-    flats = [FlatExpr(x.get_value(),
-                      x.describe(),
-                      x.final_repr())]
+    flats = [FlatExpr(x.get_value(), x.describe(), x.final_repr())]
     redo_node = x
     for i in range(reps - 1):
         ev._jump_to(ev.token_list.index(node) + 2)  # skip function open paren
         redo_node = ev.expr()
-        flats.append(FlatExpr(redo_node.get_value(),
-                              redo_node.describe(),
-                              redo_node.final_repr()))
+        flats.append(
+            FlatExpr(
+                redo_node.get_value(), redo_node.describe(), redo_node.final_repr()
+            )
+        )
     # jump forward past end of function parentheses
     ev._jump_to(exit_iter_pos)
 
@@ -911,28 +939,35 @@ def build_success_lambda(compare_operator, target):
 def build_comparison_operator(operator):
     def _comparison_operator(node, x, y):
         grouping = SuccessValues(items=[x.get_value()])
-        node.detail = success_filter(grouping,
-                                     build_success_lambda(operator, y.get_value()))
+        node.detail = success_filter(
+            grouping, build_success_lambda(operator, y.get_value())
+        )
+
     return _comparison_operator
 
 
 def build_comparison_filter(operator):
     def _comparison_filter(node, x, y):
-        node.detail = success_filter(x.detail,
-                                     build_success_lambda(operator, y.get_value()))
+        node.detail = success_filter(
+            x.detail, build_success_lambda(operator, y.get_value())
+        )
+
     return _comparison_filter
 
 
 def build_comparison_exploder(operator):
     def _explode_compare_operator(node, x, y):
-        node.detail = dice_explode(x.detail,
-                                   build_success_lambda(operator, y.get_value()))
+        node.detail = dice_explode(
+            x.detail, build_success_lambda(operator, y.get_value())
+        )
+
     return _explode_compare_operator
 
 
 def build_arithmetic_operator(operator):
     def _arithmetic_operator(node, x, y):
         node._value = ARITHMETICS[operator](x.get_value(), y.get_value())
+
     return _arithmetic_operator
 
 
@@ -964,6 +999,7 @@ def build_dash_nud(bind_power):
             self.second = None
             _negate_operator(self, self.first)
         return self
+
     return _dash_nud
 
 
@@ -979,39 +1015,41 @@ Evaluator.register_function_single("fact", _factorial_operator)
 Evaluator.register_function_double("agg", _aggregate_function)
 
 for comp in COMPARISONS.keys():
-    Evaluator.register_infix(comp,
-                             build_comparison_operator(comp), 5)._spaces = True
+    Evaluator.register_infix(comp, build_comparison_operator(comp), 5)._spaces = True
 
 # Operators given reflex nud to allow their use as agg operands
 Evaluator.register_infix(
-    "+", build_arithmetic_operator("+"), 10).as_prefix = _reflex_nud
+    "+", build_arithmetic_operator("+"), 10
+).as_prefix = _reflex_nud
 # dash nud special case because of negation prefix
 Evaluator.register_infix("-", build_arithmetic_operator("-"), 10)
 Evaluator.register_infix(
-    "*", build_arithmetic_operator("*"), 20).as_prefix = _reflex_nud
+    "*", build_arithmetic_operator("*"), 20
+).as_prefix = _reflex_nud
 Evaluator.register_infix("×", build_arithmetic_operator("*"), 20)
 Evaluator.register_infix(
-    "/", build_arithmetic_operator("/"), 20).as_prefix = _reflex_nud
+    "/", build_arithmetic_operator("/"), 20
+).as_prefix = _reflex_nud
 Evaluator.register_infix("÷", build_arithmetic_operator("/"), 20)
-Evaluator.register_infix("%", build_arithmetic_operator(
-    "%"), 20).as_prefix = _reflex_nud
+Evaluator.register_infix(
+    "%", build_arithmetic_operator("%"), 20
+).as_prefix = _reflex_nud
 
 Evaluator.register_symbol("-").as_prefix = build_dash_nud(100)
 Evaluator.register_infix(
-    "^", build_arithmetic_operator("^"), 110, right_assoc=True).as_prefix = _reflex_nud
+    "^", build_arithmetic_operator("^"), 110, right_assoc=True
+).as_prefix = _reflex_nud
 
 Evaluator.register_infix("C", _choose_operator, 130)._spaces = True
 Evaluator.register_infix("choose", _choose_operator, 130)._spaces = True
 
 for comp in COMPARISONS.keys():
-    Evaluator.register_infix("!" + comp,
-                             build_comparison_exploder(comp), 190)
+    Evaluator.register_infix("!" + comp, build_comparison_exploder(comp), 190)
 
 Evaluator.register_postfix("!", _dice_explode_operator, 190)
 
 for comp in COMPARISONS.keys():
-    Evaluator.register_infix("?" + comp,
-                             build_comparison_filter(comp), 190)
+    Evaluator.register_infix("?" + comp, build_comparison_filter(comp), 190)
 
 Evaluator.register_infix("dl", _drop_low_operator, 190)
 Evaluator.register_infix("dh", _drop_high_operator, 190)
@@ -1027,9 +1065,11 @@ if __name__ == "__main__":
         try:
             results = roll(intext)
             print(format_roll_results(results))
-        except (ArithmeticError,
-                ValueError,
-                RuntimeError,
-                StopIteration,
-                SyntaxError) as err:
+        except (
+            ArithmeticError,
+            ValueError,
+            RuntimeError,
+            StopIteration,
+            SyntaxError,
+        ) as err:
             print(f"{err}")
