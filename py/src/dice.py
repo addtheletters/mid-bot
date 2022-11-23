@@ -1,13 +1,16 @@
 # Dicerolling.
 # Parser and evaluator for dice roll inputs.
 
+from typing import NamedTuple
 import itertools
 import re
 from functools import total_ordering
 from math import factorial, sqrt
 from random import randint
+import typing
 
 from utils import codeblock, escape
+
 
 KEYWORDS = ["C", "choose", "repeat", "sqrt", "fact", "agg"]
 KEYWORD_PATTERN = "|".join(KEYWORDS)
@@ -15,10 +18,11 @@ KEYWORD_PATTERN = "|".join(KEYWORDS)
 TOKEN_SPEC = [
     ("NUMBER",   r"\d+(\.\d*)?"),               # Integer or decimal number
     ("KEYWORD",  KEYWORD_PATTERN),              # Keywords
-    ("DICE",     r"[dk][hl]|[d]"),              # Diceroll operators
-    ("EXPLODE",  r"![~><]=|![><=]|!"),          # Dice explosions
-    ("DCOMP",    r"\?[~><]=|\?[><=]"),          # Success filter comparisons
-    ("COMP",     r"[><~]=|[><=]"),              # Comparisons
+    ("DICE",     r"[d]"),                       # Diceroll operators
+    ("DIETYPE",  r"[cF]"),                      # Special types of dice usable with the diceroll operator
+    ("SETOP",    r"~?\?|[kp]|[!x]o?|rr?"),      # Set operators
+    ("SETSEL",   r"[hl]|even|odd"),             # Set selectors, not including comparisons
+    ("COMP",     r"[><~]=|[><=]"),              # Comparisons, also usable as set selectors
     ("OP",       r"[+\-*×/÷%^()]"),             # Generic operators
     ("SEP",      r"[,]"),                       # Separators like commas
     ("END",      r"[;\n]"),                     # Line end / break characters
@@ -57,7 +61,7 @@ def symbolize(symbol_table, intext: str):
 
     for item in TOKEN_PATTERN.finditer(intext):
         # Cut input into tokens.
-        # https://docs.python.org/3.6/library/re.html#regular-expression-examples
+        # https://docs.python.org/3.6/library/re.html#writing-a-tokenizer
         kind = item.lastgroup  # group name
         value = item.group()
         if kind == "NUMBER":
@@ -232,6 +236,23 @@ def aggregate_using(collected, agg_func, agg_joiner=", "):
     return new_values
 
 
+# Represents the value of one element in a set.
+# Tracks whether or not it has been dropped or added to the set.
+class SetElement(NamedTuple):
+    item: any
+    dropped: bool = False
+    added: bool = False
+
+    def formatted(self, text=None) -> str:
+        if text is None:
+            text = ExprResult.description(self.item)
+        if self.dropped:  # strikethrough dropped values
+            text = f"~~{text}~~"
+        if self.added:  # italicize added values
+            text = f"_{text}_"
+        return text
+
+
 # The result of evaluating an expression, to be stored in a parse tree node
 # which required computation or collection. This is for operations with
 # complexity that cannot be represented by formatting just the operator and
@@ -248,12 +269,16 @@ class ExprResult:
     def value(item):
         if isinstance(item, ExprResult):
             return item.get_value()
+        if isinstance(item, SetElement):
+            return item.item
         return item
 
     @staticmethod
     def description(item):
         if isinstance(item, ExprResult):
             return item.get_description()
+        if isinstance(item, SetElement):
+            return ExprResult.description(item.item)
         return f"{item}"
 
     # Numerical value for this expression.
@@ -290,6 +315,126 @@ class FlatExpr(ExprResult):
 
     def __lt__(self, other):
         return self.value < ExprResult.value(other)
+
+
+# For representing a collection of elements upon which set operations may be performed.
+# `items` are expected to be repr'able, as a literal or ExprResult.
+class SetResult(ExprResult):
+    def __init__(self, items: list = None, operator=None, selector=None):
+        super().__init__()
+        # create SetElements for each input item, unless already provided with SetElements (copying from another set)
+        self.elements: list[SetElement] = (
+            [
+                (item if isinstance(item, SetElement) else SetElement(item=item))
+                for item in items
+            ]
+            if items
+            else []
+        )
+        self.operator = operator
+        self.selector = selector
+        self._run_operator()
+
+    def __repr__(self):
+        return f"{len(self.elements)} element" + (
+            "s" if len(self.elements) != 1 else ""
+        )
+
+    def copy(self):
+        return SetResult(
+            items=self.elements.copy(),
+            operator=self.operator,
+            selector=self.selector,
+        )
+
+    def _run_operator(self):
+        if self.operator == None:
+            return
+        # TODO use the operator and selector on the remaining elements. Should be called as part of the constructor.
+        pass
+
+    # Override.
+    def get_value(self):
+        # TODO implement such that this returns a tuple or list of values
+        return super().get_value()
+
+    # Override. List collection contents.
+    def get_description(self, joiner=", "):
+        return joiner.join([self.format_element(element) for element in self.elements])
+
+    # Can be overridden for customized per-element formatting.
+    def format_element(self, element: SetElement):
+        return element.formatted()
+
+    # Returns all elements.
+    def get_elements(self):
+        return self.elements
+
+    # Returns all items, including dropped ones.
+    def get_all_items(self):
+        return [element.item for element in self.elements]
+
+    # Exclude dropped items.
+    def get_remaining(self):
+        return [element.item for element in self.elements if element.dropped == False]
+
+    def get_remaining_count(self):
+        return len(self.get_remaining())
+
+    # Aggregate together non-dropped items.
+    # If `func` remains None, default behavior is a sum.
+    def aggregate(self, func=None):
+        values = [ExprResult.value(item) for item in self.get_remaining()]
+        return list(itertools.accumulate(values, func))
+
+    def total(self, func=None):
+        if self.get_remaining_count() < 1:
+            return 0
+        return self.aggregate(func)[-1]  # TODO replace with itertools.reduce?
+
+    # Drop items located at specific indices
+    def drop_indices(self, indices: list[int]):
+        for i in indices:
+            self.elements[i] = SetElement(
+                item=self.elements[i].item, dropped=True, added=self.elements[i].added
+            )
+
+    # Add items as new set elements
+    def add_items(self, items: list):
+        for item in items:
+            self.elements.append(SetElement(item=item, dropped=False, added=True))
+
+
+# Set selector. Finds the `n` lowest or highest values in the set.
+# `high` value of False means selecting the lowest items.
+# Returns a list of indices of elements that match.
+def select_low_high(
+    elements: list[SetElement], n: int, high: bool = False
+) -> list[int]:
+    n = force_integral(n, "items to drop")
+    if n < 0:
+        raise ValueError(f"Can't drop negative # of items ({n})")
+    if n == 0:
+        # nothing to select
+        return []
+
+    # sort and pair with indices
+    sorted_pairs = sorted(list(enumerate(elements)), key=lambda x: x[1], reverse=high)
+    # remove previously dropped elements
+    sorted_pairs = list(filter(lambda pair: not pair[1].dropped, sorted_pairs))
+    # gather indices of n elements
+    return [pair[0] for pair in sorted_pairs[:n]]
+
+
+# Set selector. Finds all items satisfying the condition.
+# Returns a list of indices of elements that match.
+def select_conditional(
+    elements: list[SetElement], condition: typing.Callable[..., bool]
+) -> list[int]:
+    matched_pairs = list(
+        filter(lambda pair: condition(pair[1].item), enumerate(elements))
+    )
+    return [pair[0] for pair in matched_pairs]
 
 
 # For representing an expression which evaluated to a collection from which items
@@ -1063,6 +1208,8 @@ if __name__ == "__main__":
     while True:
         intext = input()
         try:
+            symbols = symbolize(Evaluator.SYMBOL_TABLE, intext)
+            print(symbols)
             results = roll(intext)
             print(format_roll_results(results))
         except (

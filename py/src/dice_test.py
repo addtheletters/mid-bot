@@ -2,8 +2,8 @@ import dice
 import unittest
 
 
+@unittest.skip
 class DiceTest(unittest.TestCase):
-
     def assertFirstRollEquals(self, roll_input, expected):
         results = dice.roll(roll_input)
         self.assertAlmostEqual(results[0].get_value(), expected)
@@ -92,5 +92,47 @@ class DiceTest(unittest.TestCase):
         results = dice.roll("1+5d2;(2d9)*3;15")
         self.assertEqual(len(results), 3)
 
-if __name__ == '__main__':
+
+class SetTest(unittest.TestCase):
+    def setUp(self):
+        self.values = [10, 5, 3, 7, -5, 0, 6]
+        self.setr = dice.SetResult(self.values)
+
+    def test_create_set(self):
+        self.assertEqual(self.setr.get_remaining_count(), len(self.values))
+        set_items = self.setr.get_all_items()
+        self.assertListEqual(set_items, self.values)
+
+    def test_select_low_high(self):
+        elements = self.setr.get_elements()
+        select_zero = dice.select_low_high(elements, 0, high=False)
+        self.assertEqual(len(select_zero), 0)
+
+        n = 2
+        select_lowest = dice.select_low_high(elements, n, high=False)
+        self.assertEqual(len(select_lowest), n)
+        self.assertIn(4, select_lowest)
+        self.assertIn(5, select_lowest)
+        self.assertNotIn(0, select_lowest)
+
+        select_highest = dice.select_low_high(elements, n, high=True)
+        self.assertEqual(len(select_highest), n)
+        self.assertIn(0, select_highest)
+        self.assertIn(3, select_highest)
+        self.assertNotIn(4, select_highest)
+
+    def test_select_conditional(self):
+        elements = self.setr.get_elements()
+
+        def gt_zero_condition(value):
+            return value > 0
+
+        select_gt_zero = dice.select_conditional(elements, gt_zero_condition)
+        self.assertEqual(len(select_gt_zero), 5)
+        self.assertNotIn(4, select_gt_zero)
+        self.assertNotIn(5, select_gt_zero)
+        self.assertIn(2, select_gt_zero)
+
+
+if __name__ == "__main__":
     unittest.main()
