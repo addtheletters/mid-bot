@@ -239,7 +239,7 @@ def aggregate_using(collected, agg_func, agg_joiner=", "):
 # Represents the value of one element in a set.
 # Tracks whether or not it has been dropped or added to the set.
 class SetElement(NamedTuple):
-    item: any
+    item: typing.Any
     dropped: bool = False
     added: bool = False
 
@@ -318,9 +318,11 @@ class FlatExpr(ExprResult):
 
 
 # For representing a collection of elements upon which set operations may be performed.
+# "Set" is a misnomer shorthand for these collections, since they are ordered.
+# Selectors return lists of element indices and operators take those indices as input.
 # `items` are expected to be repr'able, as a literal or ExprResult.
 class SetResult(ExprResult):
-    def __init__(self, items: list = None, operator=None, selector=None):
+    def __init__(self, items: list | None = None, operator=None, selector=None):
         super().__init__()
         # create SetElements for each input item, unless already provided with SetElements (copying from another set)
         self.elements: list[SetElement] = (
@@ -331,9 +333,9 @@ class SetResult(ExprResult):
             if items
             else []
         )
-        self.operator = operator
-        self.selector = selector
-        self._run_operator()
+        self.selector: typing.Callable[[SetResult], list[int]] | None = selector
+        self.operator: typing.Callable[[SetResult, list[int]], typing.Any] | None = operator
+        self.result_value = self._do_operator()
 
     def __repr__(self):
         return f"{len(self.elements)} element" + (
@@ -347,16 +349,22 @@ class SetResult(ExprResult):
             selector=self.selector,
         )
 
-    def _run_operator(self):
+    def _do_operator(self):
         if self.operator == None:
-            return
-        # TODO use the operator and selector on the remaining elements. Should be called as part of the constructor.
-        pass
+            return None
+
+        selected = []
+        if self.selector != None:
+            selected = self.selector(self)
+        else:
+            # select all remaining if no selector is provided
+            selected = [i for (i, _) in self.get_remaining_enumerated()]
+
+        return self.operator(self, selected)
 
     # Override.
     def get_value(self):
-        # TODO implement such that this returns a tuple or list of values
-        return super().get_value()
+        return self.result_value
 
     # Override. List collection contents.
     def get_description(self, joiner=", "):
@@ -366,9 +374,9 @@ class SetResult(ExprResult):
     def format_element(self, element: SetElement):
         return element.formatted()
 
-    # Returns all elements.
-    def get_elements(self):
-        return self.elements
+    # Returns the number of items, including dropped ones.
+    def get_all_count(self):
+        return len(self.elements)
 
     # Returns all items, including dropped ones.
     def get_all_items(self):
@@ -380,6 +388,16 @@ class SetResult(ExprResult):
 
     def get_remaining_count(self):
         return len(self.get_remaining())
+
+    # Return a list of all tuples of (index, non-dropped item).
+    def get_remaining_enumerated(self):
+        return [
+            (fpair[0], fpair[1].item)
+            for fpair in filter(
+                lambda pair: not pair[1].dropped,
+                enumerate(self.elements),
+            )
+        ]
 
     # Aggregate together non-dropped items.
     # If `func` remains None, default behavior is a sum.
@@ -408,9 +426,7 @@ class SetResult(ExprResult):
 # Set selector. Finds the `n` lowest or highest values in the set.
 # `high` value of False means selecting the lowest items.
 # Returns a list of indices of elements that match.
-def select_low_high(
-    elements: list[SetElement], n: int, high: bool = False
-) -> list[int]:
+def select_low_high(setr: SetResult, n: int, high: bool = False) -> list[int]:
     n = force_integral(n, "items to drop")
     if n < 0:
         raise ValueError(f"Can't drop negative # of items ({n})")
@@ -419,9 +435,9 @@ def select_low_high(
         return []
 
     # sort and pair with indices
-    sorted_pairs = sorted(list(enumerate(elements)), key=lambda x: x[1], reverse=high)
-    # remove previously dropped elements
-    sorted_pairs = list(filter(lambda pair: not pair[1].dropped, sorted_pairs))
+    sorted_pairs = sorted(
+        setr.get_remaining_enumerated(), key=lambda pair: pair[1], reverse=high
+    )
     # gather indices of n elements
     return [pair[0] for pair in sorted_pairs[:n]]
 
@@ -429,12 +445,25 @@ def select_low_high(
 # Set selector. Finds all items satisfying the condition.
 # Returns a list of indices of elements that match.
 def select_conditional(
-    elements: list[SetElement], condition: typing.Callable[..., bool]
+    setr: SetResult, condition: typing.Callable[..., bool]
 ) -> list[int]:
-    matched_pairs = list(
-        filter(lambda pair: condition(pair[1].item), enumerate(elements))
-    )
+    elements = setr.get_remaining_enumerated()
+    matched_pairs = list(filter(lambda pair: condition(pair[1]), elements))
     return [pair[0] for pair in matched_pairs]
+
+
+# Set operator.
+# Returns the number of selected items.
+# Drops items not matched by the selector.
+# `failures` inverts the behavior, dropping matched items and counting unmatched ones.
+def set_op_count(setr: SetResult, selected: list[int], failures=False):
+    count = len(selected)
+    to_drop = selected
+    if failures:
+        count = setr.get_remaining_count() - len(selected)
+        to_drop = [i for i in range(setr.get_all_count()) if i not in selected]
+    setr.drop_indices(to_drop)
+    return count
 
 
 # For representing an expression which evaluated to a collection from which items
@@ -674,7 +703,7 @@ class Evaluator:
         return peeked
 
     def advance(self, expected=None):
-        if expected and self._current()._kind != expected:
+        if expected and self._current()._kind != expected: # type: ignore
             raise SyntaxError(f"Missing expected: {expected}")
         return self._next()
 
@@ -763,8 +792,8 @@ class Evaluator:
                 if self.is_collection():
                     # Hide breakout detail description if only one item
                     if (
-                        len(self.detail.get_all_items()) < 2
-                        and self.detail.get_value() != None
+                        len(self.detail.get_all_items()) < 2 # type: ignore
+                        and self.detail.get_value() != None  # type: ignore
                     ):
                         detail_description = "⇒" + str(self.detail)
                     # Hide details if outer collection already will show them
@@ -861,11 +890,11 @@ class Evaluator:
     def expr(self, right_bp=0):
         prev = self._current()
         self._next()
-        left = prev.as_prefix(self)
-        while right_bp < self._current()._bp:
+        left = prev.as_prefix(self) # type: ignore
+        while right_bp < self._current()._bp: # type: ignore
             prev = self._current()
             self._next()
-            left = prev.as_infix(self, left)
+            left = prev.as_infix(self, left) # type: ignore
         return left
 
     @staticmethod
@@ -965,7 +994,7 @@ class Evaluator:
     # A break token results in several trees.
     def evaluate(self):
         ret = self.expr()
-        if self._current()._kind != "END":
+        if self._current()._kind != "END": # type: ignore
             raise SyntaxError("Parse error: missing operators?")
         return ret
 
@@ -1149,9 +1178,9 @@ def build_dash_nud(bind_power):
 
 
 # initialize symbol table with type classes
-Evaluator.register_symbol("NUMBER").as_prefix = _reflex_nud
+Evaluator.register_symbol("NUMBER").as_prefix = _reflex_nud # type: ignore
 Evaluator.register_symbol("END")
-Evaluator.register_symbol("(").as_prefix = _left_paren_nud
+Evaluator.register_symbol("(").as_prefix = _left_paren_nud # type: ignore
 Evaluator.register_symbol(")")
 Evaluator.register_symbol(",")
 Evaluator.register_function_double("repeat", _repeat_function)
@@ -1165,25 +1194,25 @@ for comp in COMPARISONS.keys():
 # Operators given reflex nud to allow their use as agg operands
 Evaluator.register_infix(
     "+", build_arithmetic_operator("+"), 10
-).as_prefix = _reflex_nud
+).as_prefix = _reflex_nud # type: ignore
 # dash nud special case because of negation prefix
 Evaluator.register_infix("-", build_arithmetic_operator("-"), 10)
 Evaluator.register_infix(
     "*", build_arithmetic_operator("*"), 20
-).as_prefix = _reflex_nud
+).as_prefix = _reflex_nud # type: ignore
 Evaluator.register_infix("×", build_arithmetic_operator("*"), 20)
 Evaluator.register_infix(
     "/", build_arithmetic_operator("/"), 20
-).as_prefix = _reflex_nud
+).as_prefix = _reflex_nud # type: ignore
 Evaluator.register_infix("÷", build_arithmetic_operator("/"), 20)
 Evaluator.register_infix(
     "%", build_arithmetic_operator("%"), 20
-).as_prefix = _reflex_nud
+).as_prefix = _reflex_nud # type: ignore
 
-Evaluator.register_symbol("-").as_prefix = build_dash_nud(100)
+Evaluator.register_symbol("-").as_prefix = build_dash_nud(100) # type: ignore
 Evaluator.register_infix(
     "^", build_arithmetic_operator("^"), 110, right_assoc=True
-).as_prefix = _reflex_nud
+).as_prefix = _reflex_nud # type: ignore
 
 Evaluator.register_infix("C", _choose_operator, 130)._spaces = True
 Evaluator.register_infix("choose", _choose_operator, 130)._spaces = True
