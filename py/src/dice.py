@@ -318,7 +318,7 @@ class FlatExpr(ExprResult):
 # Selectors return lists of element indices and operators take those indices as input.
 # `items` are expected to be repr'able, as a literal or ExprResult.
 class SetResult(ExprResult):
-    def __init__(self, items: list | None = None, operator=None, selector=None):
+    def __init__(self, items: list | None = None):
         super().__init__()
         # create SetElements for each input item, unless already provided with SetElements (copying from another set)
         self.elements: list[SetElement] = (
@@ -329,10 +329,6 @@ class SetResult(ExprResult):
             if items
             else []
         )
-        self.selector: typing.Callable[[SetResult], list[int]] | None = selector
-        self.operator: typing.Callable[
-            [SetResult, list[int]], typing.Any
-        ] | None = operator
         self.result_value = self
 
     def __repr__(self):
@@ -344,22 +340,7 @@ class SetResult(ExprResult):
         return iter(self.get_remaining())
 
     def copy(self):
-        return SetResult(
-            items=self.elements.copy(),
-            operator=self.operator,
-            selector=self.selector,
-        )
-
-    # def _do_operator(self):
-    #     if self.operator == None:
-    #         return None
-    #     selected = []
-    #     if self.selector != None:
-    #         selected = self.selector(self)
-    #     else:
-    #         # select all remaining if no selector is provided
-    #         selected = [i for (i, _) in self.get_remaining_enumerated()]
-    #     return self.operator(self, selected)
+        return SetResult(items=self.elements.copy())
 
     def set_value(self, value):
         self.result_value = value
@@ -429,7 +410,7 @@ class SetSelector(ExprResult):
     # Override. Repr with description, since has no value.
     def __repr__(self):
         return self.get_description()
-        
+
     # Override.
     def get_value(self):
         raise SyntaxError("Can't get value of a set selector.")
@@ -653,9 +634,7 @@ class DiceValues(SetResult):
         return str(self.get_value())
 
     def copy(self):
-        return DiceValues(
-            self.dice_size, self.elements
-        )
+        return DiceValues(self.dice_size, self.elements)
 
     # Override to wrap and use `+` to join.
     def get_description(self):
@@ -1296,15 +1275,11 @@ Evaluator.register_infix("choose", _choose_operator, 130)._spaces = True
 for comp in COMPARISONS.keys():
     Evaluator.register_infix("?" + comp, build_comparison_filter(comp), 190)
 
-# Evaluator.register_infix("dl", _drop_low_operator, 190)
-# Evaluator.register_infix("dh", _drop_high_operator, 190)
-# Evaluator.register_infix("kl", _keep_low_operator, 190)
-# Evaluator.register_infix("kh", _keep_high_operator, 190)
+Evaluator.register_infix("k", _set_keep_operator, 180)
+Evaluator.register_infix("p", _set_drop_operator, 180)
 
 Evaluator.register_prefix("h", _select_high_operator, 190)
 Evaluator.register_prefix("l", _select_low_operator, 190)
-Evaluator.register_infix("k", _set_keep_operator, 180)
-Evaluator.register_infix("p", _set_drop_operator, 180)
 
 Evaluator.register_infix("d", _dice_operator, 200)
 Evaluator.register_prefix("d", _dice_operator_prefix, 200)
