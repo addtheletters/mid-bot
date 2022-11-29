@@ -108,17 +108,17 @@ class SetTest(unittest.TestCase):
         self.assertListEqual(set_items, self.values)
 
     def test_select_low_high(self):
-        select_zero = dice.select_low_high(self.setr, 0, high=False)
+        select_zero = dice._select_low_high(self.setr, 0, high=False)
         self.assertEqual(len(select_zero), 0)
 
         n = 2
-        select_lowest = dice.select_low_high(self.setr, n, high=False)
+        select_lowest = dice._select_low_high(self.setr, n, high=False)
         self.assertEqual(len(select_lowest), n)
         self.assertIn(4, select_lowest)
         self.assertIn(5, select_lowest)
         self.assertNotIn(0, select_lowest)
 
-        select_highest = dice.select_low_high(self.setr, n, high=True)
+        select_highest = dice._select_low_high(self.setr, n, high=True)
         self.assertEqual(len(select_highest), n)
         self.assertIn(0, select_highest)
         self.assertIn(3, select_highest)
@@ -128,7 +128,7 @@ class SetTest(unittest.TestCase):
         def gt_zero_condition(value):
             return value > 0
 
-        select_gt_zero = dice.select_conditional(self.setr, gt_zero_condition)
+        select_gt_zero = dice._select_conditional(self.setr, gt_zero_condition)
         self.assertEqual(len(select_gt_zero), 5)
         self.assertNotIn(4, select_gt_zero)
         self.assertNotIn(5, select_gt_zero)

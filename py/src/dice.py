@@ -77,7 +77,7 @@ def symbolize(symbol_table, intext: str):
 
         # determine the symbol type
         symbol_id = kind
-        if kind in ("OP", "DICE", "KEYWORD", "SEP", "COMP", "EXPLODE", "DCOMP"):
+        if kind in ("OP", "DICE", "KEYWORD", "SEP", "COMP", "SETOP", "SETSEL"):
             symbol_id = value
         try:  # look up symbol type
             symbol = symbol_table[symbol_id]
@@ -120,22 +120,18 @@ def single_roll(size) -> int:
 
 
 def dice_roll(count, size):
-    rolls = []
-    negative = False
-
     count = force_integral(count, "dice count")
     if size < 0:
         raise ValueError(f"Negative dice don't exist (d{size})")
     size = force_integral(size, "dice size")
-
     if count < 0:
-        count = -count
-        negative = True
+        raise ValueError(f"Can't roll a negative number of dice ({count})")
 
+    rolls = []
     for i in range(count):
         rolls.append(single_roll(size))
 
-    return DiceValues(size, negative, items=rolls)
+    return DiceValues(size, items=rolls)
 
 
 # Drop the highest or lowest value items from a collection.
@@ -175,34 +171,34 @@ def dice_drop(dice, n, high=False, keep=False):
     return new_values
 
 
-def dice_explode(dice, condition=None, max_explosion=EXPLOSION_CAP):
-    if not isinstance(dice, DiceValues):
-        raise SyntaxError(f"Can't explode (not dice)")
-    if condition == None:
-        condition = lambda x: (x >= dice.dice_size)
+# def dice_explode(dice, condition=None, max_explosion=EXPLOSION_CAP):
+#     if not isinstance(dice, DiceValues):
+#         raise SyntaxError(f"Can't explode (not dice)")
+#     if condition == None:
+#         condition = lambda x: (x >= dice.dice_size)
 
-    new_values = dice.copy()
-    rolls = new_values.get_all_items()
+#     new_values = dice.copy()
+#     rolls = new_values.get_all_items()
 
-    exploded = []
-    exploded_indices = []
-    for i in range(len(rolls)):
-        if i in dice.dropped:
-            continue
-        if condition(rolls[i]) and len(exploded) < max_explosion:
-            exploded_indices.append(len(rolls) + len(exploded))
-            exploded.append(single_roll(dice.dice_size))
+#     exploded = []
+#     exploded_indices = []
+#     for i in range(len(rolls)):
+#         if i in dice.dropped:
+#             continue
+#         if condition(rolls[i]) and len(exploded) < max_explosion:
+#             exploded_indices.append(len(rolls) + len(exploded))
+#             exploded.append(single_roll(dice.dice_size))
 
-    i = 0
-    while i < len(exploded) and len(exploded) < max_explosion:
-        if condition(exploded[i]):
-            exploded_indices.append(len(rolls) + len(exploded))
-            exploded.append(single_roll(dice.dice_size))
-        i += 1
+#     i = 0
+#     while i < len(exploded) and len(exploded) < max_explosion:
+#         if condition(exploded[i]):
+#             exploded_indices.append(len(rolls) + len(exploded))
+#             exploded.append(single_roll(dice.dice_size))
+#         i += 1
 
-    new_values.items.extend(exploded)
-    new_values.added.extend(exploded_indices)
-    return new_values
+#     new_values.items.extend(exploded)
+#     new_values.added.extend(exploded_indices)
+#     return new_values
 
 
 # Look through collected values. Drop any that don't succeed the condition.
@@ -269,7 +265,7 @@ class ExprResult:
     def value(item):
         if isinstance(item, ExprResult):
             return item.get_value()
-        if isinstance(item, SetElement):
+        elif isinstance(item, SetElement):
             return item.item
         return item
 
@@ -277,7 +273,7 @@ class ExprResult:
     def description(item):
         if isinstance(item, ExprResult):
             return item.get_description()
-        if isinstance(item, SetElement):
+        elif isinstance(item, SetElement):
             return ExprResult.description(item.item)
         return f"{item}"
 
@@ -286,7 +282,7 @@ class ExprResult:
         raise NotImplementedError("Value missing for this expression.")
 
     # String description of how this expression was evaluated.
-    def get_description(self):
+    def get_description(self) -> str:
         raise NotImplementedError("Description missing for this expression.")
 
 
@@ -334,13 +330,18 @@ class SetResult(ExprResult):
             else []
         )
         self.selector: typing.Callable[[SetResult], list[int]] | None = selector
-        self.operator: typing.Callable[[SetResult, list[int]], typing.Any] | None = operator
-        self.result_value = self._do_operator()
+        self.operator: typing.Callable[
+            [SetResult, list[int]], typing.Any
+        ] | None = operator
+        self.result_value = self
 
     def __repr__(self):
         return f"{len(self.elements)} element" + (
             "s" if len(self.elements) != 1 else ""
         )
+
+    def __iter__(self):
+        return iter(self.get_remaining())
 
     def copy(self):
         return SetResult(
@@ -349,20 +350,21 @@ class SetResult(ExprResult):
             selector=self.selector,
         )
 
-    def _do_operator(self):
-        if self.operator == None:
-            return None
+    # def _do_operator(self):
+    #     if self.operator == None:
+    #         return None
+    #     selected = []
+    #     if self.selector != None:
+    #         selected = self.selector(self)
+    #     else:
+    #         # select all remaining if no selector is provided
+    #         selected = [i for (i, _) in self.get_remaining_enumerated()]
+    #     return self.operator(self, selected)
 
-        selected = []
-        if self.selector != None:
-            selected = self.selector(self)
-        else:
-            # select all remaining if no selector is provided
-            selected = [i for (i, _) in self.get_remaining_enumerated()]
+    def set_value(self, value):
+        self.result_value = value
 
-        return self.operator(self, selected)
-
-    # Override.
+    # Override. If no result value has been set, returns itself as a full set.
     def get_value(self):
         return self.result_value
 
@@ -423,10 +425,61 @@ class SetResult(ExprResult):
             self.elements.append(SetElement(item=item, dropped=False, added=True))
 
 
+class SetSelector(ExprResult):
+    # Override. Repr with description, since has no value.
+    def __repr__(self):
+        return self.get_description()
+        
+    # Override.
+    def get_value(self):
+        raise SyntaxError("Can't get value of a set selector.")
+
+    # Returns a list of indices of elements matched by the selector.
+    def apply(self, setr: SetResult) -> list[int]:
+        raise NotImplementedError("Set selector behavior is missing.")
+
+
+# Set selector. Finds all items satisfying the condition.
+# Returns a list of indices of elements that match.
+class ConditionalSelector(SetSelector):
+    def __init__(
+        self, condition: typing.Callable[..., bool], cond_repr: str = "(? condition)"
+    ) -> None:
+        super().__init__()
+        self.condition = condition
+        self.cond_repr = cond_repr
+
+    def get_description(self) -> str:
+        return self.cond_repr
+
+    def apply(self, setr: SetResult) -> list[int]:
+        return _select_conditional(setr, self.condition)
+
+
+def _select_conditional(
+    setr: SetResult, condition: typing.Callable[..., bool]
+) -> list[int]:
+    elements = setr.get_remaining_enumerated()
+    matched_pairs = list(filter(lambda pair: condition(pair[1]), elements))
+    return [pair[0] for pair in matched_pairs]
+
+
 # Set selector. Finds the `n` lowest or highest values in the set.
 # `high` value of False means selecting the lowest items.
-# Returns a list of indices of elements that match.
-def select_low_high(setr: SetResult, n: int, high: bool = False) -> list[int]:
+class LowHighSelector(SetSelector):
+    def __init__(self, num: int = 1, high: bool = False) -> None:
+        super().__init__()
+        self.num: int = num
+        self.high: bool = high
+
+    def get_description(self) -> str:
+        return f"{'h' if self.high else 'l'}{self.num}"
+
+    def apply(self, setr: SetResult) -> list[int]:
+        return _select_low_high(setr, self.num, self.high)
+
+
+def _select_low_high(setr: SetResult, n: int, high: bool = False) -> list[int]:
     n = force_integral(n, "items to drop")
     if n < 0:
         raise ValueError(f"Can't drop negative # of items ({n})")
@@ -442,28 +495,45 @@ def select_low_high(setr: SetResult, n: int, high: bool = False) -> list[int]:
     return [pair[0] for pair in sorted_pairs[:n]]
 
 
-# Set selector. Finds all items satisfying the condition.
-# Returns a list of indices of elements that match.
-def select_conditional(
-    setr: SetResult, condition: typing.Callable[..., bool]
-) -> list[int]:
-    elements = setr.get_remaining_enumerated()
-    matched_pairs = list(filter(lambda pair: condition(pair[1]), elements))
-    return [pair[0] for pair in matched_pairs]
+class EvenOddSelector(ConditionalSelector):
+    def __init__(self, odd: bool = False) -> None:
+        self.odd = odd
+        if odd:
+            super().__init__(condition=lambda x: (x % 2 == 0), cond_repr="odd")
+        else:
+            super().__init__(condition=lambda x: (x % 2 != 0), cond_repr="even")
+
+
+def invert_selection(all_count: int, selected: list[int]):
+    return [i for i in range(all_count) if i not in selected]
 
 
 # Set operator.
-# Returns the number of selected items.
+# Returns the set with value as the number of selected items.
 # Drops items not matched by the selector.
-# `failures` inverts the behavior, dropping matched items and counting unmatched ones.
-def set_op_count(setr: SetResult, selected: list[int], failures=False):
+# `invert` inverts the behavior, dropping matched items and counting unmatched ones.
+def set_op_count(setr: SetResult, selected: list[int], invert=False):
     count = len(selected)
     to_drop = selected
-    if failures:
+    if not invert:
         count = setr.get_remaining_count() - len(selected)
-        to_drop = [i for i in range(setr.get_all_count()) if i not in selected]
+        to_drop = invert_selection(setr.get_all_count(), selected)
     setr.drop_indices(to_drop)
-    return count
+    setr.set_value(count)
+    return setr
+
+
+# Set operator.
+# Returns the set with value as the sum of selected items.
+# Drops items not matched by the selector.
+# `invert` inverts the behavior, dropping matched items and adding unmatched ones.
+def set_op_keep(setr: SetResult, selected: list[int], invert=False):
+    to_drop = selected
+    if not invert:
+        to_drop = invert_selection(setr.get_all_count(), selected)
+    setr.drop_indices(to_drop)
+    setr.set_value(setr.total())
+    return setr
 
 
 # For representing an expression which evaluated to a collection from which items
@@ -573,26 +643,19 @@ class MultiExpr(CollectedValues):
         return out + "\n}"
 
 
-class DiceValues(CollectedValues):
-    def __init__(self, dice_size, negated=False, items=None, dropped=None, added=None):
-        super().__init__(items, dropped, added)
+class DiceValues(SetResult):
+    def __init__(self, dice_size, items):
+        super().__init__(items)
         self.dice_size = dice_size
-        self.negated = negated
+        self.set_value(self.total())
 
     def __repr__(self):
         return str(self.get_value())
 
     def copy(self):
         return DiceValues(
-            self.dice_size,
-            self.negated,
-            self.items.copy(),
-            self.dropped.copy(),
-            self.added.copy(),
+            self.dice_size, self.elements
         )
-
-    def get_value(self):
-        return super().get_value() * (-1 if self.negated else 1)
 
     # Override to wrap and use `+` to join.
     def get_description(self):
@@ -703,7 +766,7 @@ class Evaluator:
         return peeked
 
     def advance(self, expected=None):
-        if expected and self._current()._kind != expected: # type: ignore
+        if expected and self._current()._kind != expected:  # type: ignore
             raise SyntaxError(f"Missing expected: {expected}")
         return self._next()
 
@@ -792,7 +855,7 @@ class Evaluator:
                 if self.is_collection():
                     # Hide breakout detail description if only one item
                     if (
-                        len(self.detail.get_all_items()) < 2 # type: ignore
+                        len(self.detail.get_all_items()) < 2  # type: ignore
                         and self.detail.get_value() != None  # type: ignore
                     ):
                         detail_description = "⇒" + str(self.detail)
@@ -858,10 +921,10 @@ class Evaluator:
 
         def is_dropkeepadd(self):
             return self._kind in (
-                "dl",
-                "dh",
-                "kl",
-                "kh",
+                "p",
+                "k",
+                "l",
+                "h",
                 "!",
                 "!>",
                 "!<",
@@ -890,11 +953,11 @@ class Evaluator:
     def expr(self, right_bp=0):
         prev = self._current()
         self._next()
-        left = prev.as_prefix(self) # type: ignore
-        while right_bp < self._current()._bp: # type: ignore
+        left = prev.as_prefix(self)  # type: ignore
+        while right_bp < self._current()._bp:  # type: ignore
             prev = self._current()
             self._next()
-            left = prev.as_infix(self, left) # type: ignore
+            left = prev.as_infix(self, left)  # type: ignore
         return left
 
     @staticmethod
@@ -994,7 +1057,7 @@ class Evaluator:
     # A break token results in several trees.
     def evaluate(self):
         ret = self.expr()
-        if self._current()._kind != "END": # type: ignore
+        if self._current()._kind != "END":  # type: ignore
             raise SyntaxError("Parse error: missing operators?")
         return ret
 
@@ -1031,20 +1094,28 @@ def _dice_operator_prefix(node, x):
     node.detail = dice_roll(1, x.get_value())
 
 
-def _drop_low_operator(node, x, y):
-    node.detail = dice_drop(x.detail, y.get_value())
+def _set_keep_operator(node, x, y):
+    if not isinstance(x.detail, SetResult):
+        raise SyntaxError("Can't drop/keep (left operand is not a set)")
+    if not isinstance(y.detail, SetSelector):
+        raise SyntaxError("Can't drop/keep (right operand is not a selector)")
+    node.detail = set_op_keep(x.detail.copy(), y.detail.apply(x.detail))
 
 
-def _drop_high_operator(node, x, y):
-    node.detail = dice_drop(x.detail, y.get_value(), high=True)
+def _set_drop_operator(node, x, y):
+    if not isinstance(x.detail, SetResult):
+        raise SyntaxError("Can't drop/keep (left operand is not a set)")
+    if not isinstance(y.detail, SetSelector):
+        raise SyntaxError("Can't drop/keep (right operand is not a selector)")
+    node.detail = set_op_keep(x.detail.copy(), y.detail.apply(x.detail), invert=True)
 
 
-def _keep_low_operator(node, x, y):
-    node.detail = dice_drop(x.detail, y.get_value(), high=False, keep=True)
+def _select_low_operator(node, x):
+    node.detail = LowHighSelector(num=x.get_value(), high=False)
 
 
-def _keep_high_operator(node, x, y):
-    node.detail = dice_drop(x.detail, y.get_value(), high=True, keep=True)
+def _select_high_operator(node, x):
+    node.detail = LowHighSelector(num=x.get_value(), high=True)
 
 
 def _negate_operator(node, x):
@@ -1055,8 +1126,8 @@ def _factorial_operator(node, x):
     node._value = factorial(x.get_value())
 
 
-def _dice_explode_operator(node, x):
-    node.detail = dice_explode(x.detail)
+# def _dice_explode_operator(node, x):
+#     node.detail = dice_explode(x.detail)
 
 
 def _choose_operator(node, x, y):
@@ -1129,13 +1200,13 @@ def build_comparison_filter(operator):
     return _comparison_filter
 
 
-def build_comparison_exploder(operator):
-    def _explode_compare_operator(node, x, y):
-        node.detail = dice_explode(
-            x.detail, build_success_lambda(operator, y.get_value())
-        )
+# def build_comparison_exploder(operator):
+#     def _explode_compare_operator(node, x, y):
+#         node.detail = dice_explode(
+#             x.detail, build_success_lambda(operator, y.get_value())
+#         )
 
-    return _explode_compare_operator
+#     return _explode_compare_operator
 
 
 def build_arithmetic_operator(operator):
@@ -1178,9 +1249,9 @@ def build_dash_nud(bind_power):
 
 
 # initialize symbol table with type classes
-Evaluator.register_symbol("NUMBER").as_prefix = _reflex_nud # type: ignore
+Evaluator.register_symbol("NUMBER").as_prefix = _reflex_nud  # type: ignore
 Evaluator.register_symbol("END")
-Evaluator.register_symbol("(").as_prefix = _left_paren_nud # type: ignore
+Evaluator.register_symbol("(").as_prefix = _left_paren_nud  # type: ignore
 Evaluator.register_symbol(")")
 Evaluator.register_symbol(",")
 Evaluator.register_function_double("repeat", _repeat_function)
@@ -1194,41 +1265,46 @@ for comp in COMPARISONS.keys():
 # Operators given reflex nud to allow their use as agg operands
 Evaluator.register_infix(
     "+", build_arithmetic_operator("+"), 10
-).as_prefix = _reflex_nud # type: ignore
+).as_prefix = _reflex_nud  # type: ignore
 # dash nud special case because of negation prefix
 Evaluator.register_infix("-", build_arithmetic_operator("-"), 10)
 Evaluator.register_infix(
     "*", build_arithmetic_operator("*"), 20
-).as_prefix = _reflex_nud # type: ignore
+).as_prefix = _reflex_nud  # type: ignore
 Evaluator.register_infix("×", build_arithmetic_operator("*"), 20)
 Evaluator.register_infix(
     "/", build_arithmetic_operator("/"), 20
-).as_prefix = _reflex_nud # type: ignore
+).as_prefix = _reflex_nud  # type: ignore
 Evaluator.register_infix("÷", build_arithmetic_operator("/"), 20)
 Evaluator.register_infix(
     "%", build_arithmetic_operator("%"), 20
-).as_prefix = _reflex_nud # type: ignore
+).as_prefix = _reflex_nud  # type: ignore
 
-Evaluator.register_symbol("-").as_prefix = build_dash_nud(100) # type: ignore
+Evaluator.register_symbol("-").as_prefix = build_dash_nud(100)  # type: ignore
 Evaluator.register_infix(
     "^", build_arithmetic_operator("^"), 110, right_assoc=True
-).as_prefix = _reflex_nud # type: ignore
+).as_prefix = _reflex_nud  # type: ignore
 
 Evaluator.register_infix("C", _choose_operator, 130)._spaces = True
 Evaluator.register_infix("choose", _choose_operator, 130)._spaces = True
 
-for comp in COMPARISONS.keys():
-    Evaluator.register_infix("!" + comp, build_comparison_exploder(comp), 190)
+# for comp in COMPARISONS.keys():
+#     Evaluator.register_infix("!" + comp, build_comparison_exploder(comp), 190)
 
-Evaluator.register_postfix("!", _dice_explode_operator, 190)
+# Evaluator.register_postfix("!", _dice_explode_operator, 190)
 
 for comp in COMPARISONS.keys():
     Evaluator.register_infix("?" + comp, build_comparison_filter(comp), 190)
 
-Evaluator.register_infix("dl", _drop_low_operator, 190)
-Evaluator.register_infix("dh", _drop_high_operator, 190)
-Evaluator.register_infix("kl", _keep_low_operator, 190)
-Evaluator.register_infix("kh", _keep_high_operator, 190)
+# Evaluator.register_infix("dl", _drop_low_operator, 190)
+# Evaluator.register_infix("dh", _drop_high_operator, 190)
+# Evaluator.register_infix("kl", _keep_low_operator, 190)
+# Evaluator.register_infix("kh", _keep_high_operator, 190)
+
+Evaluator.register_prefix("h", _select_high_operator, 190)
+Evaluator.register_prefix("l", _select_low_operator, 190)
+Evaluator.register_infix("k", _set_keep_operator, 180)
+Evaluator.register_infix("p", _set_drop_operator, 180)
 
 Evaluator.register_infix("d", _dice_operator, 200)
 Evaluator.register_prefix("d", _dice_operator_prefix, 200)
