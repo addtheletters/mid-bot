@@ -2,7 +2,7 @@ import dice
 import unittest
 
 
-class DiceTest(unittest.TestCase):
+class RollTest(unittest.TestCase):
     def assertFirstRollEquals(self, roll_input, expected):
         results = dice.roll(roll_input)
         self.assertAlmostEqual(results[0].get_value(), expected)
@@ -11,6 +11,8 @@ class DiceTest(unittest.TestCase):
         results = dice.roll(roll_input)
         self.assertEqual(dice.format_roll_results(results), expected)
 
+
+class MathTest(RollTest):
     def test_basic_arithmetic(self):
         self.assertFirstRollEquals("1+2", 3)
         self.assertFirstRollEquals("2 * 4", 8)
@@ -33,6 +35,23 @@ class DiceTest(unittest.TestCase):
         self.assertFirstRollEquals("5 C fact(2)", 10)
         self.assertFirstRollEquals("fact(5C2)", 3628800)
 
+    def test_comparison(self):
+        self.assertFirstRollEquals("10 > 3", True)
+        self.assertFirstRollEquals("10 >= 3", True)
+        self.assertFirstRollEquals("10 < 3", False)
+        self.assertFirstRollEquals("10 <= 3", False)
+        self.assertFirstRollEquals("10 ~= 3", True)
+        self.assertFirstRollEquals("10 = 3", False)
+
+    # Test that semicolons separate an input into multiple rolls.
+    def test_breaks(self):
+        results = dice.roll("1d20+5; 2d6+5")
+        self.assertEqual(len(results), 2)
+        results = dice.roll("1+5d2;(2d9)*3;15")
+        self.assertEqual(len(results), 3)
+
+
+class DiceTest(RollTest):
     def test_interpret_diceroll(self):
         dice.roll("d10")
         dice.roll("3d20")
@@ -46,15 +65,7 @@ class DiceTest(unittest.TestCase):
         dice.roll("4d6kh3")
         dice.roll("8d12pl3")
         dice.roll("30d10pl1kh5pl2")
-    
-    def test_comparison(self):
-        self.assertFirstRollEquals("10 > 3", True)
-        self.assertFirstRollEquals("10 >= 3", True)
-        self.assertFirstRollEquals("10 < 3", False)
-        self.assertFirstRollEquals("10 <= 3", False)
-        self.assertFirstRollEquals("10 ~= 3", True)
-        self.assertFirstRollEquals("10 = 3", False)
-    
+
     def test_interpret_dice_select_compare(self):
         dice.roll("10d8k>4")
         dice.roll("10d8k>=4")
@@ -63,10 +74,30 @@ class DiceTest(unittest.TestCase):
         dice.roll("10d8k~=4")
         dice.roll("10d8k=4")
 
-    @unittest.skip  # type: ignore
+    def test_interpret_successes(self):
+        dice.roll("6d10?>5")
+        dice.roll("10d8?<3")
+        dice.roll("8d4?=3")
+        dice.roll("10d4?>=3")
+        dice.roll("10d4?<=3")
+        # dice.roll("repeat(3d6, 10)?>=4")
+        dice.roll("(10d4?=3)+10d6")
+        dice.roll("((10d4?=(1d4!))+10)d6")
+        dice.roll("10d6?~=1")
+
+    def test_count_pass_fail(self):
+        self.assertFirstRollEquals("7d2?>0", 7)
+        self.assertFirstRollEquals("7d2?>=0", 7)
+        self.assertFirstRollEquals("7d2?<0", 0)
+        self.assertFirstRollEquals("7d2?<=0", 0)
+        self.assertFirstRollEquals("7d2?=0", 0)
+        self.assertFirstRollEquals("7d2?~=0", 7)
+        self.assertFirstRollEquals("7d2?h3", 3)
+        self.assertFirstRollEquals("7d2?l4", 4)
+
     def test_interpret_explode(self):
         dice.roll("10d20!")
-        dice.roll("10d4dl2!")
+        dice.roll("10d4pl2!")
         dice.roll("8d6!>4")
         dice.roll("8d6!<(3d2)")
         dice.roll("8d6!<=1d4")
@@ -83,28 +114,6 @@ class DiceTest(unittest.TestCase):
         dice.roll("repeat(repeat(4*3d8, 2), 3)")
         dice.roll("repeat(3d10, repeat(d8, 4)kh1)dl1")
 
-    def test_count_pass_fail(self):
-        self.assertFirstRollEquals("7d2?>0", 7)
-        self.assertFirstRollEquals("7d2?>=0", 7)
-        self.assertFirstRollEquals("7d2?<0", 0)
-        self.assertFirstRollEquals("7d2?<=0", 0)
-        self.assertFirstRollEquals("7d2?=0", 0)
-        self.assertFirstRollEquals("7d2?~=0", 7)
-        self.assertFirstRollEquals("7d2?h3", 3)
-        self.assertFirstRollEquals("7d2?l4", 4)
-
-
-    def test_interpret_successes(self):
-        dice.roll("6d10?>5")
-        dice.roll("10d8?<3")
-        dice.roll("8d4?=3")
-        dice.roll("10d4?>=3")
-        dice.roll("10d4?<=3")
-        # dice.roll("repeat(3d6, 10)?>=4")
-        dice.roll("(10d4?=3)+10d6")
-        # dice.roll("((10d4?=(1d4!))+10)d6")
-        dice.roll("10d6?~=1")
-
     @unittest.skip  # type: ignore
     def test_interpret_aggregate(self):
         dice.roll("agg(10d6, +)")
@@ -113,13 +122,6 @@ class DiceTest(unittest.TestCase):
         dice.roll("agg(8d6, /)")
         dice.roll("agg(3d10, ^)")
         dice.roll("agg(4d10, %)")
-
-    # Test that semicolons separate an input into multiple rolls.
-    def test_breaks(self):
-        results = dice.roll("1d20+5; 2d6+5")
-        self.assertEqual(len(results), 2)
-        results = dice.roll("1+5d2;(2d9)*3;15")
-        self.assertEqual(len(results), 3)
 
 
 class SetTest(unittest.TestCase):
@@ -159,6 +161,14 @@ class SetTest(unittest.TestCase):
         self.assertNotIn(5, select_gt_zero)
         self.assertIn(2, select_gt_zero)
 
+    def test_explode(self):
+        # simulated 4d6
+        die_size = 6
+        my_dice = dice.DiceValues(die_size, [1, 1, 3, 6])
+        exploded = dice.dice_explode(my_dice, dice.ConditionalSelector(lambda x: x >= die_size))
+        self.assertGreater(exploded.get_remaining_count(), my_dice.get_remaining_count())
+        self.assertEqual(my_dice.get_value(), 11)
+        self.assertGreater(exploded.get_value(), 11)  # type: ignore
 
 if __name__ == "__main__":
     unittest.main()

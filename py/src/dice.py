@@ -33,7 +33,7 @@ TOKEN_PATTERN = re.compile(
     '|'.join(f"(?P<{pair[0]}>{pair[1]})" for pair in TOKEN_SPEC))
 # fmt: on
 
-EXPLOSION_CAP = 9999
+EXPLOSION_CAP = 99
 
 COMPARISONS = {
     "=": lambda x, y: x == y,
@@ -169,36 +169,6 @@ def dice_drop(dice, n, high=False, keep=False):
 
     new_values.dropped.extend(new_drops)
     return new_values
-
-
-# def dice_explode(dice, condition=None, max_explosion=EXPLOSION_CAP):
-#     if not isinstance(dice, DiceValues):
-#         raise SyntaxError(f"Can't explode (not dice)")
-#     if condition == None:
-#         condition = lambda x: (x >= dice.dice_size)
-
-#     new_values = dice.copy()
-#     rolls = new_values.get_all_items()
-
-#     exploded = []
-#     exploded_indices = []
-#     for i in range(len(rolls)):
-#         if i in dice.dropped:
-#             continue
-#         if condition(rolls[i]) and len(exploded) < max_explosion:
-#             exploded_indices.append(len(rolls) + len(exploded))
-#             exploded.append(single_roll(dice.dice_size))
-
-#     i = 0
-#     while i < len(exploded) and len(exploded) < max_explosion:
-#         if condition(exploded[i]):
-#             exploded_indices.append(len(rolls) + len(exploded))
-#             exploded.append(single_roll(dice.dice_size))
-#         i += 1
-
-#     new_values.items.extend(exploded)
-#     new_values.added.extend(exploded_indices)
-#     return new_values
 
 
 # Produce a version of this collection which is evaluated by aggregating
@@ -631,6 +601,32 @@ class DiceValues(SetResult):
         return self.dice_size
 
 
+# Set operator for dice.
+# Roll another die for any matches and add it to the total.
+# For new dice added this way, each match adds yet another die, up to `max_explodes` times.
+def dice_explode(dice: DiceValues, selector: SetSelector, max_explodes=EXPLOSION_CAP):
+    new_dice = dice.copy()
+
+    explosions = 0
+    should_explode = selector.apply(new_dice)
+    exploded_values: list = []
+    has_exploded: list[int] = []
+
+    while explosions < max_explodes and len(should_explode) > 0:
+        for i in should_explode:
+            exploded_values.append(single_roll(new_dice.dice_size))
+            has_exploded.append(i)
+
+        explosions += 1
+        new_dice.add_items(exploded_values)
+        exploded_values = []
+        # this is not very performant. TODO have the selector apply to only the new values
+        should_explode = [i for i in selector.apply(new_dice) if i not in has_exploded]
+
+    new_dice.set_value(new_dice.total())
+    return new_dice
+
+
 # The result of a conditional filter applied to collected values, conceptually
 # some number of dice rolls that successful meet some operator's condition.
 # Total value is evaluated to the number of non-dropped items remaining.
@@ -889,13 +885,9 @@ class Evaluator:
             return self._kind == "d" or self.is_dropkeepadd()
 
         def is_dropkeepadd(self):
-            return self._kind in (
+            return self.is_selector() or self._kind in (
                 "p",
                 "k",
-                "l",
-                "h",
-                "even",
-                "odd",
                 "!",
                 "!>",
                 "!<",
@@ -903,14 +895,22 @@ class Evaluator:
                 "!<=",
                 "!=",
                 "!~=",
-                ">",
-                "<",
-                ">=",
-                "<=",
-                "=",
-                "~=",
                 "?",
                 "~?",
+            )
+        
+        def is_selector(self):
+            return self._kind in (
+                "=",
+                "~=",
+                ">",
+                ">=",
+                "<",
+                "<=",
+                "h",
+                "l",
+                "even",
+                "odd",
             )
 
         # Is this node dice, or does any node in this subtree have dice?
@@ -991,6 +991,29 @@ class Evaluator:
         s = Evaluator.register_symbol(kind, bind_power)
         s.as_infix = _as_postfix
         s._postfix = True
+        return s
+
+    @staticmethod
+    def register_hybrid_infix_postfix(
+        kind,
+        func_infix: typing.Callable,
+        func_postfix: typing.Callable,
+        check_right_func: typing.Callable[..., bool],
+        bind_power,
+    ):
+        def _as_hybrid(self, evaluator: Evaluator, left):
+            self.first = left
+            right = evaluator.peek()
+            if check_right_func(right):
+                self.second = evaluator.expr(bind_power)  # left-associative only
+                func_infix(self, self.first, self.second)
+            else:
+                self.second = None
+                func_postfix(self, self.first)
+            return self
+
+        s = Evaluator.register_symbol(kind, bind_power)
+        s.as_infix = _as_hybrid
         return s
 
     @staticmethod
@@ -1112,6 +1135,24 @@ def build_selector_nud(selector: SetSelector):
 
     return _nud
 
+def _explode_check_right_valid(right: Evaluator._Symbol):
+    return right.is_selector()
+
+def _explode_postfix_operator(node, x):
+    if not isinstance(x.detail, DiceValues):
+        raise SyntaxError("Invalid operand for explode (not a dice result)")
+    dice: DiceValues = x.detail
+    node.detail = dice_explode(
+        dice, ConditionalSelector(lambda a: a >= dice.get_dice_size())
+    )
+
+
+def _explode_infix_operator(node, x, y):
+    dice, setsel = assert_set_operands(x.detail, y.detail)
+    if not isinstance(dice, DiceValues):
+        raise SyntaxError("Invalid operand for explode (not a dice result)")
+    node.detail = dice_explode(dice, setsel)
+
 
 def _negate_operator(node, x):
     node._value = -x.get_value()
@@ -1119,10 +1160,6 @@ def _negate_operator(node, x):
 
 def _factorial_operator(node, x):
     node._value = factorial(x.get_value())
-
-
-# def _dice_explode_operator(node, x):
-#     node.detail = dice_explode(x.detail)
 
 
 def _choose_operator(node, x, y):
@@ -1278,19 +1315,18 @@ Evaluator.register_infix(
 Evaluator.register_infix("C", _choose_operator, 130)._spaces = True
 Evaluator.register_infix("choose", _choose_operator, 130)._spaces = True
 
-# for comp in COMPARISONS.keys():
-#     Evaluator.register_infix("!" + comp, build_comparison_exploder(comp), 190)
-
-# Evaluator.register_postfix("!", _dice_explode_operator, 190)
-
-# for comp in COMPARISONS.keys():
-#     Evaluator.register_infix("?" + comp, build_comparison_filter(comp), 190)
-
 # Set Operators
 Evaluator.register_infix("k", _set_keep_operator, 180)
 Evaluator.register_infix("p", _set_drop_operator, 180)
 Evaluator.register_infix("?", _set_count_pass_operator, 180)
 Evaluator.register_infix("~?", _set_count_fail_operator, 180)
+Evaluator.register_hybrid_infix_postfix(
+    "!",
+    _explode_infix_operator,
+    _explode_postfix_operator,
+    _explode_check_right_valid,
+    180,
+)
 
 # Set Selectors
 Evaluator.register_prefix("h", _select_high_operator, 190)
