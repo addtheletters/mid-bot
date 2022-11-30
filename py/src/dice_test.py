@@ -1,4 +1,5 @@
 import dice
+import dice_details
 import unittest
 
 
@@ -127,7 +128,7 @@ class DiceTest(RollTest):
 class SetTest(unittest.TestCase):
     def setUp(self):
         self.values = [10, 5, 3, 7, -5, 0, 6]
-        self.setr = dice.SetResult(self.values)
+        self.setr = dice_details.SetResult(self.values)
 
     def test_create_set(self):
         self.assertEqual(self.setr.get_remaining_count(), len(self.values))
@@ -135,17 +136,17 @@ class SetTest(unittest.TestCase):
         self.assertListEqual(set_items, self.values)
 
     def test_select_low_high(self):
-        select_zero = dice._select_low_high(self.setr, 0, high=False)
+        select_zero = dice_details._select_low_high(self.setr, 0, high=False)
         self.assertEqual(len(select_zero), 0)
 
         n = 2
-        select_lowest = dice._select_low_high(self.setr, n, high=False)
+        select_lowest = dice_details._select_low_high(self.setr, n, high=False)
         self.assertEqual(len(select_lowest), n)
         self.assertIn(4, select_lowest)
         self.assertIn(5, select_lowest)
         self.assertNotIn(0, select_lowest)
 
-        select_highest = dice._select_low_high(self.setr, n, high=True)
+        select_highest = dice_details._select_low_high(self.setr, n, high=True)
         self.assertEqual(len(select_highest), n)
         self.assertIn(0, select_highest)
         self.assertIn(3, select_highest)
@@ -155,7 +156,7 @@ class SetTest(unittest.TestCase):
         def gt_zero_condition(value):
             return value > 0
 
-        select_gt_zero = dice._select_conditional(self.setr, gt_zero_condition)
+        select_gt_zero = dice_details._select_conditional(self.setr, gt_zero_condition)
         self.assertEqual(len(select_gt_zero), 5)
         self.assertNotIn(4, select_gt_zero)
         self.assertNotIn(5, select_gt_zero)
@@ -164,11 +165,16 @@ class SetTest(unittest.TestCase):
     def test_explode(self):
         # simulated 4d6
         die_size = 6
-        my_dice = dice.DiceValues(die_size, [1, 1, 3, 6])
-        exploded = dice.dice_explode(my_dice, dice.ConditionalSelector(lambda x: x >= die_size))
-        self.assertGreater(exploded.get_remaining_count(), my_dice.get_remaining_count())
+        my_dice = dice_details.DiceValues(die_size, [1, 1, 3, 6])
+        exploded = dice_details.dice_explode(
+            my_dice, dice_details.ConditionalSelector(lambda x: x >= die_size)
+        )
+        self.assertGreater(
+            exploded.get_remaining_count(), my_dice.get_remaining_count()
+        )
         self.assertEqual(my_dice.get_value(), 11)
         self.assertGreater(exploded.get_value(), 11)  # type: ignore
+
 
 if __name__ == "__main__":
     unittest.main()
