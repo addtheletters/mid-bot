@@ -39,14 +39,29 @@ class DiceTest(unittest.TestCase):
         dice.roll("8d6")
         dice.roll("10C4d3")
         dice.roll("(10C4)d3")
-        dice.roll("10 + (-10)d4")
+        dice.roll("10 - 10d4")
         dice.roll("3d((2+23)/5)")
 
-    @unittest.skip  # type: ignore
     def test_interpret_dropkeep(self):
         dice.roll("4d6kh3")
-        dice.roll("8d12dl3")
-        dice.roll("30d10dl1kh5dl2")
+        dice.roll("8d12pl3")
+        dice.roll("30d10pl1kh5pl2")
+    
+    def test_comparison(self):
+        self.assertFirstRollEquals("10 > 3", True)
+        self.assertFirstRollEquals("10 >= 3", True)
+        self.assertFirstRollEquals("10 < 3", False)
+        self.assertFirstRollEquals("10 <= 3", False)
+        self.assertFirstRollEquals("10 ~= 3", True)
+        self.assertFirstRollEquals("10 = 3", False)
+    
+    def test_interpret_dice_select_compare(self):
+        dice.roll("10d8k>4")
+        dice.roll("10d8k>=4")
+        dice.roll("10d8k<4")
+        dice.roll("10d8k<=4")
+        dice.roll("10d8k~=4")
+        dice.roll("10d8k=4")
 
     @unittest.skip  # type: ignore
     def test_interpret_explode(self):

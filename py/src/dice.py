@@ -201,21 +201,6 @@ def dice_drop(dice, n, high=False, keep=False):
 #     return new_values
 
 
-# Look through collected values. Drop any that don't succeed the condition.
-# `condition` should be a lambda function returning True for a success.
-def success_filter(dice, condition):
-    if not isinstance(dice, CollectedValues):
-        raise SyntaxError("Can't filter for successes (operand not a collection)")
-
-    new_values = SuccessValues(items=dice.items, dropped=dice.dropped, added=dice.added)
-    failures = []
-    for pair in enumerate(dice.get_remaining()):
-        if not condition(pair[1]):
-            failures.append(pair[0])
-    new_values.dropped.extend(failures)
-    return new_values
-
-
 # Produce a version of this collection which is evaluated by aggregating
 # using a provided function.
 def aggregate_using(collected, agg_func, agg_joiner=", "):
@@ -413,7 +398,9 @@ class SetSelector(ExprResult):
 
     # Override.
     def get_value(self):
-        raise SyntaxError("Can't get value of a set selector.")
+        raise SyntaxError(
+            f"Can't get value of a set selector: {self.get_description()}"
+        )
 
     # Returns a list of indices of elements matched by the selector.
     def apply(self, setr: SetResult) -> list[int]:
@@ -480,9 +467,9 @@ class EvenOddSelector(ConditionalSelector):
     def __init__(self, odd: bool = False) -> None:
         self.odd = odd
         if odd:
-            super().__init__(condition=lambda x: (x % 2 == 0), cond_repr="odd")
+            super().__init__(condition=lambda x: (x % 2 != 0), cond_repr="odd")
         else:
-            super().__init__(condition=lambda x: (x % 2 != 0), cond_repr="even")
+            super().__init__(condition=lambda x: (x % 2 == 0), cond_repr="even")
 
 
 def invert_selection(all_count: int, selected: list[int]):
@@ -647,15 +634,15 @@ class DiceValues(SetResult):
 # The result of a conditional filter applied to collected values, conceptually
 # some number of dice rolls that successful meet some operator's condition.
 # Total value is evaluated to the number of non-dropped items remaining.
-class SuccessValues(CollectedValues):
-    def __init__(self, items=None, dropped=None, added=None):
-        super().__init__(items, dropped, added)
+class SuccessValues(SetResult):
+    def __init__(self, items):
+        super().__init__(items)
 
     def __repr__(self):
         return f"{self.get_value()} success" + ("es" if self.get_value() != 1 else "")
 
     def copy(self):
-        return SuccessValues(self.items.copy(), self.dropped.copy(), self.added.copy())
+        return SuccessValues(self.elements)
 
     def get_value(self):
         return self.get_remaining_count()
@@ -782,12 +769,12 @@ class Evaluator:
 
         # Null denotation: value for literals, prefix behavior for operators.
         def as_prefix(self, evaluator):
-            raise SyntaxError(f"Unexpected symbol: {self}")
+            raise SyntaxError(f"Unexpected symbol (nud): {self}")
 
         # Left denotation: infix behavior for operators. Preceding expression
         # provided as `left`.
         def as_infix(self, evaluator, left):
-            raise SyntaxError(f"Unexpected symbol: {self}")
+            raise SyntaxError(f"Unexpected symbol (led): {self}")
 
         # Recursively describe this expression, showing dice breakouts and any
         # intermediate operations including random choice.
@@ -904,17 +891,20 @@ class Evaluator:
                 "k",
                 "l",
                 "h",
+                "even",
+                "odd",
                 "!",
                 "!>",
                 "!<",
                 "!>=",
                 "!<=",
                 "!=",
-                "?>",
-                "?<",
-                "?>=",
-                "?<=",
-                "?=",
+                ">",
+                "<",
+                ">=",
+                "<=",
+                "=",
+                "~=",
             )
 
         # Is this node dice, or does any node in this subtree have dice?
@@ -1097,6 +1087,14 @@ def _select_high_operator(node, x):
     node.detail = LowHighSelector(num=x.get_value(), high=True)
 
 
+def build_selector_nud(selector: SetSelector):
+    def _nud(self, ev):
+        self.detail = selector
+        return self
+
+    return _nud
+
+
 def _negate_operator(node, x):
     node._value = -x.get_value()
 
@@ -1160,32 +1158,28 @@ def build_success_lambda(compare_operator, target):
     return lambda x: COMPARISONS[compare_operator](x, target)
 
 
-def build_comparison_operator(operator):
+# value-value comparison is forced to treat the left-side value as a set containing the single element.
+# TODO: vastly simplify this with a different ExprResult class representing 1:1 comparison success/failure.
+def build_infix_comparison(operator):
     def _comparison_operator(node, x, y):
-        grouping = SuccessValues(items=[x.get_value()])
-        node.detail = success_filter(
-            grouping, build_success_lambda(operator, y.get_value())
+        comparison_repr = f"{operator}{y.get_value()}"
+        single_set = SuccessValues([x.get_value()])
+        selector = ConditionalSelector(
+            build_success_lambda(operator, y.get_value()), comparison_repr
         )
+        node.detail = set_op_count(single_set, selector.apply(single_set))
 
     return _comparison_operator
 
 
-def build_comparison_filter(operator):
-    def _comparison_filter(node, x, y):
-        node.detail = success_filter(
-            x.detail, build_success_lambda(operator, y.get_value())
+def build_prefix_comparison(operator):
+    def _comparison_operator(node, x):
+        comparison_repr = f"{operator}{x.get_value()}"
+        node.detail = ConditionalSelector(
+            build_success_lambda(operator, x.get_value()), comparison_repr
         )
 
-    return _comparison_filter
-
-
-# def build_comparison_exploder(operator):
-#     def _explode_compare_operator(node, x, y):
-#         node.detail = dice_explode(
-#             x.detail, build_success_lambda(operator, y.get_value())
-#         )
-
-#     return _explode_compare_operator
+    return _comparison_operator
 
 
 def build_arithmetic_operator(operator):
@@ -1238,15 +1232,15 @@ Evaluator.register_function_single("sqrt", _sqrt_operator)
 Evaluator.register_function_single("fact", _factorial_operator)
 Evaluator.register_function_double("agg", _aggregate_function)
 
-for comp in COMPARISONS.keys():
-    Evaluator.register_infix(comp, build_comparison_operator(comp), 5)._spaces = True
-
 # Operators given reflex nud to allow their use as agg operands
 Evaluator.register_infix(
     "+", build_arithmetic_operator("+"), 10
 ).as_prefix = _reflex_nud  # type: ignore
-# dash nud special case because of negation prefix
-Evaluator.register_infix("-", build_arithmetic_operator("-"), 10)
+Evaluator.register_infix(
+    "-", build_arithmetic_operator("-"), 10
+).as_prefix = build_dash_nud(  # dash nud special case because of negation prefix
+    100
+)  # type: ignore
 Evaluator.register_infix(
     "*", build_arithmetic_operator("*"), 20
 ).as_prefix = _reflex_nud  # type: ignore
@@ -1259,7 +1253,6 @@ Evaluator.register_infix(
     "%", build_arithmetic_operator("%"), 20
 ).as_prefix = _reflex_nud  # type: ignore
 
-Evaluator.register_symbol("-").as_prefix = build_dash_nud(100)  # type: ignore
 Evaluator.register_infix(
     "^", build_arithmetic_operator("^"), 110, right_assoc=True
 ).as_prefix = _reflex_nud  # type: ignore
@@ -1272,15 +1265,26 @@ Evaluator.register_infix("choose", _choose_operator, 130)._spaces = True
 
 # Evaluator.register_postfix("!", _dice_explode_operator, 190)
 
-for comp in COMPARISONS.keys():
-    Evaluator.register_infix("?" + comp, build_comparison_filter(comp), 190)
+# for comp in COMPARISONS.keys():
+#     Evaluator.register_infix("?" + comp, build_comparison_filter(comp), 190)
 
+# Set Operators
 Evaluator.register_infix("k", _set_keep_operator, 180)
 Evaluator.register_infix("p", _set_drop_operator, 180)
 
+# Set Selectors
 Evaluator.register_prefix("h", _select_high_operator, 190)
 Evaluator.register_prefix("l", _select_low_operator, 190)
+Evaluator.register_symbol("even").as_prefix = build_selector_nud(EvenOddSelector(odd=False))  # type: ignore
+Evaluator.register_symbol("odd").as_prefix = build_selector_nud(EvenOddSelector(odd=True))  # type: ignore
 
+# Comparisons
+for comp in COMPARISONS.keys():
+    Evaluator.register_infix(comp, build_infix_comparison(comp), 5)._spaces = True
+for comp in COMPARISONS.keys():
+    Evaluator.register_prefix(comp, build_prefix_comparison(comp), 190)  # type: ignore
+
+# Dice
 Evaluator.register_infix("d", _dice_operator, 200)
 Evaluator.register_prefix("d", _dice_operator_prefix, 200)
 
