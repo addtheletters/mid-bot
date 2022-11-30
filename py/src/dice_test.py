@@ -83,16 +83,26 @@ class DiceTest(unittest.TestCase):
         dice.roll("repeat(repeat(4*3d8, 2), 3)")
         dice.roll("repeat(3d10, repeat(d8, 4)kh1)dl1")
 
-    @unittest.skip  # type: ignore
+    def test_count_pass_fail(self):
+        self.assertFirstRollEquals("7d2?>0", 7)
+        self.assertFirstRollEquals("7d2?>=0", 7)
+        self.assertFirstRollEquals("7d2?<0", 0)
+        self.assertFirstRollEquals("7d2?<=0", 0)
+        self.assertFirstRollEquals("7d2?=0", 0)
+        self.assertFirstRollEquals("7d2?~=0", 7)
+        self.assertFirstRollEquals("7d2?h3", 3)
+        self.assertFirstRollEquals("7d2?l4", 4)
+
+
     def test_interpret_successes(self):
         dice.roll("6d10?>5")
         dice.roll("10d8?<3")
         dice.roll("8d4?=3")
         dice.roll("10d4?>=3")
         dice.roll("10d4?<=3")
-        dice.roll("repeat(3d6, 10)?>=4")
+        # dice.roll("repeat(3d6, 10)?>=4")
         dice.roll("(10d4?=3)+10d6")
-        dice.roll("((10d4?=(1d4!))+10)d6")
+        # dice.roll("((10d4?=(1d4!))+10)d6")
         dice.roll("10d6?~=1")
 
     @unittest.skip  # type: ignore

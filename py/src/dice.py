@@ -481,10 +481,10 @@ def invert_selection(all_count: int, selected: list[int]):
 # Drops items not matched by the selector.
 # `invert` inverts the behavior, dropping matched items and counting unmatched ones.
 def set_op_count(setr: SetResult, selected: list[int], invert=False):
-    count = len(selected)
+    count = setr.get_remaining_count() - len(selected)
     to_drop = selected
     if not invert:
-        count = setr.get_remaining_count() - len(selected)
+        count = len(selected)
         to_drop = invert_selection(setr.get_all_count(), selected)
     setr.drop_indices(to_drop)
     setr.set_value(count)
@@ -807,6 +807,9 @@ class Evaluator:
                     # No child contains diceroll randomness, so just show the
                     # value; or other repr if valueless like an operator
                     # argument.
+                    if self.is_dropkeepadd():
+                        return ExprResult.description(self.detail)
+
                     if self.get_value() == None:
                         return escape(str(self))
                     return f"{self.get_value()}"
@@ -866,7 +869,7 @@ class Evaluator:
             if self._kind in ARITHMETICS.keys():
                 return self._kind
             out = [self._kind, self.first, self.second]
-            out = map(str, filter(None, out))
+            out = map(str, filter(None, out))  # type: ignore
             return "<" + " ".join(out) + ">"
 
         def final_repr(self):
@@ -899,12 +902,15 @@ class Evaluator:
                 "!>=",
                 "!<=",
                 "!=",
+                "!~=",
                 ">",
                 "<",
                 ">=",
                 "<=",
                 "=",
                 "~=",
+                "?",
+                "~?",
             )
 
         # Is this node dice, or does any node in this subtree have dice?
@@ -1063,20 +1069,32 @@ def _dice_operator_prefix(node, x):
     node.detail = dice_roll(1, x.get_value())
 
 
+def assert_set_operands(setr, setsel):
+    if not isinstance(setr, SetResult):
+        raise SyntaxError("Invalid left operand (not a set)")
+    if not isinstance(setsel, SetSelector):
+        raise SyntaxError("Invalid right operand (not a selector)")
+    return (setr, setsel)
+
+
 def _set_keep_operator(node, x, y):
-    if not isinstance(x.detail, SetResult):
-        raise SyntaxError("Can't drop/keep (left operand is not a set)")
-    if not isinstance(y.detail, SetSelector):
-        raise SyntaxError("Can't drop/keep (right operand is not a selector)")
-    node.detail = set_op_keep(x.detail.copy(), y.detail.apply(x.detail))
+    setr, setsel = assert_set_operands(x.detail, y.detail)
+    node.detail = set_op_keep(setr.copy(), setsel.apply(setr))
 
 
 def _set_drop_operator(node, x, y):
-    if not isinstance(x.detail, SetResult):
-        raise SyntaxError("Can't drop/keep (left operand is not a set)")
-    if not isinstance(y.detail, SetSelector):
-        raise SyntaxError("Can't drop/keep (right operand is not a selector)")
-    node.detail = set_op_keep(x.detail.copy(), y.detail.apply(x.detail), invert=True)
+    setr, setsel = assert_set_operands(x.detail, y.detail)
+    node.detail = set_op_keep(setr.copy(), setsel.apply(setr), invert=True)
+
+
+def _set_count_pass_operator(node, x, y):
+    setr, setsel = assert_set_operands(x.detail, y.detail)
+    node.detail = set_op_count(setr.copy(), setsel.apply(setr))
+
+
+def _set_count_fail_operator(node, x, y):
+    setr, setsel = assert_set_operands(x.detail, y.detail)
+    node.detail = set_op_count(setr.copy(), setsel.apply(setr), invert=True)
 
 
 def _select_low_operator(node, x):
@@ -1271,6 +1289,8 @@ Evaluator.register_infix("choose", _choose_operator, 130)._spaces = True
 # Set Operators
 Evaluator.register_infix("k", _set_keep_operator, 180)
 Evaluator.register_infix("p", _set_drop_operator, 180)
+Evaluator.register_infix("?", _set_count_pass_operator, 180)
+Evaluator.register_infix("~?", _set_count_fail_operator, 180)
 
 # Set Selectors
 Evaluator.register_prefix("h", _select_high_operator, 190)
