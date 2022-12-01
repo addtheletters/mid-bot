@@ -34,7 +34,7 @@ async def reply(
 ):
     if mention is None:
         mention = not is_slash_command(ctx)
-    payload = f"{ctx.author.mention if mention else ''}{text}"
+    payload = f"{(ctx.author.mention + ' ') if mention else ''}{text}"
     if len(payload) > config.MAX_MESSAGE_LENGTH:
         cutoff = len(payload) - config.MAX_MESSAGE_LENGTH
         payload = (

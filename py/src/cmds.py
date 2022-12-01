@@ -21,7 +21,7 @@ class PebbleExecutor(concurrent.futures.Executor):
         self.timeout = timeout
 
     def submit(self, fn, *args, **kwargs):
-        return self.pool.schedule(fn, args=args, timeout=self.timeout)
+        return self.pool.schedule(fn, args=args, timeout=self.timeout)  # type: ignore
 
     def map(self, func, *iterables, timeout=None, chunksize=1):
         raise NotImplementedError("This wrapper does not support `map`.")
@@ -40,6 +40,8 @@ class PebbleExecutor(concurrent.futures.Executor):
 # Since app commands cannot accept a >100 character description,
 # swap that field for the brief when we register hybrid commands.
 def swap_hybrid_command_description(hybrid: commands.HybridCommand):
+    if not hybrid.app_command or not hybrid.brief:
+        raise RuntimeError(f"Tried to swap missing description/brief on hybrid command {hybrid}")
     hybrid.app_command.description = hybrid.brief
 
 
@@ -47,13 +49,17 @@ P = typing.ParamSpec("P")
 
 
 async def as_subprocess_command(
-    ctx: commands.Context, func: typing.Callable[..., any], *args, **kwargs
-) -> any:
+    ctx: commands.Context, func: typing.Callable[..., typing.Any], *args, **kwargs
+) -> typing.Any:
     loop: asyncio.AbstractEventLoop = ctx.bot.loop
     executor: PebbleExecutor = ctx.bot.get_executor()
     cmd_future = loop.run_in_executor(
         executor, functools.partial(func, *args, **kwargs)
     )
+
+    if not ctx.command:
+        raise RuntimeError(f"Missing command for context {ctx}")
+
     output = f"Executing {ctx.command.name}: {ctx.kwargs}..."
     log.info(output)
     try:
@@ -116,9 +122,9 @@ __Dice roll__ `d`
 __Collective Comparison__ `?= ?> ?< ?>= ?<= ?~=`
     Filter for and count how many items from a collection succeed a comparison.
     `{get_summon_prefix()}roll 4d6?=5` for how many times 5 is rolled from 4 six-sided dice. 
-__Keep/Drop__ `kh` (keep high), `kl` (keep low), `dh` (drop high), `dl` (drop low)
+__Keep/Drop__ `kh` (keep high), `kl` (keep low), `ph` (drop high), `pl` (drop low)
     `<collection>kh<N>` keeps the N highest values from the collection.
-    `{get_summon_prefix()}roll 4d6kh3` or `{get_summon_prefix()}roll repeat(3d6, 5)dl2`
+    `{get_summon_prefix()}roll 4d6kh3` or `{get_summon_prefix()}roll repeat(3d6, 5)pl2`
 __Explode__ `!`, also `!= !> !< !>= !<= !~=`
     `<diceroll>!` Highest-possible rolls explode (triggers another roll).
     With comparison, will explode on rolls that succeed.
