@@ -42,17 +42,17 @@ jobs:
         env:
           GIT_SHA: ${{ github.sha }}
         run: |
-          ssh deployment '
+          ssh deployment "
             cd mid-bot
             git fetch
             git checkout $GIT_SHA
-          '
+          "
       - name: Install requirements
         run: |
-          ssh deployment '
+          ssh deployment "
             cd mid-bot
             pip install -r requirements.txt
-          '
+          "
       - name: Set DISCORD_TOKEN
         env:
             DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
