@@ -130,6 +130,10 @@ class DiceTest(RollTest):
         dice.roll("{2d3, 3d4}")
         self.assertFirstRollEquals("{5, 10}kh1", 10)
         self.assertFirstRollEquals("{100, 30}?=30", 1)
+        self.assertFirstRollEquals("{2, 4, 6, 3}?even", 3)
+        self.assertFirstRollEquals("{2, 4, 6, 3}?odd", 1)
+        self.assertFirstRollEquals("{2, 4, 6, 3}keven", 12)
+        self.assertFirstRollEquals("{2, 4, 6, 3}podd", 12)
 
 
 class HelpExamplesTest(unittest.TestCase):

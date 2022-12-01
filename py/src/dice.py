@@ -110,22 +110,18 @@ class Evaluator:
         # operator binding power, 0 for literals.
         _bp = 0
 
-        # show operator after child for display purposes
-        _postfix = False
         # add function-call parens when displaying operator with children
         _function_like = False
-        # when displaying, insert spaces to separate operator from children
-        _spaces = False
 
         def __init__(self):
             # numerical literal or resolved computation value
             self._value = None
             # detailed info on operator computation such as dice resolution
-            self.detail = None
+            self.detail: ExprResult | None = None
 
             # parse tree links
-            self.first = None
-            self.second = None
+            self.first: Evaluator._Symbol | None = None
+            self.second: Evaluator._Symbol | None = None
 
         def get_value(self):
             if self._value != None:
@@ -143,61 +139,42 @@ class Evaluator:
         def as_infix(self, evaluator, left):
             raise SyntaxError(f"Unexpected symbol (led): {self}")
 
-        # Recursively describe this expression, showing dice breakouts and any
-        # intermediate operations including random choice.
-        # With uneval=True, describe as it was interpreted but not evaluated.
-        # This should resemble the original input, but with whitespace removed
-        # and possible parentheses inserted for clarity.
-        def describe(self, uneval=False, predrop=False):
-            describe_first = (
-                self.first.describe(
-                    uneval=uneval,
-                    predrop=(
-                        self.is_dropkeepadd() or (predrop and self.is_collection())
-                    ),
-                )
-                if self.first != None
-                else ""
-            )
-            describe_second = (
-                self.second.describe(uneval=uneval) if self.second != None else ""
-            )
+        # when describing, show this node's operator after child
+        def should_postfix(self) -> bool:
+            return False
 
-            if self._kind == "(":  # parenthesis group
-                return "(" + describe_first + ")"
+        # when describing, insert spaces to separate operator from children
+        def should_spaces(self) -> bool:
+            return False
 
-            spacer = " " if self._spaces else ""
-            detail_description = ""
+        # Recursively describe this expression.
+        # This should resemble the original input.
+        # If `evaluated`, the description reduces nodes lacking dice operations
+        # to their result value and shows the results of dicerolls.
+        # If `top_level`, sets of expressions are allowed to join with newlines for
+        # better readability.
+        def describe(self, evaluated=False, top_level=False) -> str:
+            if self.second == None and self.first == None:
+                if self._kind in ARITHMETICS.keys():
+                    # display lone symbol if used as operand such as in agg()
+                    return f"{self._kind}"
+                if self.detail:
+                    return ExprResult.description(self.detail, evaluated, top_level)
+                if self._kind != "NUMBER":
+                    print(self._kind)
+                return str(self)
 
-            if not uneval:
-                if (not self.is_collection()) and (not self.contains_diceroll()):
-                    # No child contains diceroll randomness, so just show the
-                    # value; or other repr if valueless like an operator
-                    # argument.
-                    if self.is_dropkeepadd():
-                        return ExprResult.description(self.detail)
-
+            if evaluated:
+                if not self.contains_diceroll():
                     if self.get_value() == None:
                         return escape(str(self))
                     return f"{self.get_value()}"
-
-                # repeated expression special case
-                # This causes details to be hidden from `agg`.
-                if (self._kind == "repeat" or self._kind == "agg") and (not predrop):
-                    return ExprResult.description(self.detail)
-
                 if self.detail:
-                    detail_description = " " + ExprResult.description(self.detail)
-                if self.is_collection():
-                    # Hide breakout detail description if only one item
-                    if (
-                        len(self.detail.get_all_items()) < 2  # type: ignore
-                        and self.detail.get_value() != None  # type: ignore
-                    ):
-                        detail_description = "⇒" + str(self.detail)
-                    # Hide details if outer collection already will show them
-                    if predrop:
-                        detail_description = ""
+                    return ExprResult.description(self.detail, evaluated, top_level)
+
+            describe_first = self.first.describe(evaluated) if self.first else ""
+            describe_second = self.second.describe(evaluated) if self.second else ""
+            spacer = " " if self.should_spaces() else ""
 
             if self._function_like:
                 close_function = ")"
@@ -205,36 +182,20 @@ class Evaluator:
                     close_function = f",{spacer}{describe_second})"
                 return f"{self._kind}({describe_first}" + close_function
 
+            if self._kind == "(":  # parenthesis group
+                return "(" + describe_first + ")"
+
             left = describe_first
             right = describe_second
-
-            if self.second == None:
-                # No operands, just describe this node's value.
-                if self.first == None:
-                    return str(self)
-                if self._postfix:
-                    right = ""
-                else:
-                    left = ""
-                    right = describe_first
-
-            op = self._kind
-            if not uneval:
-                op = escape(self._kind)
-
-            prewrap = f"{left}{spacer}{op}{spacer}{right}" + f"{detail_description}"
-
-            if self._kind == "choose" or self._kind == "C":
-                return "(" + prewrap + ")"
-            elif self.is_collection() and not (predrop or uneval):
-                return "[" + prewrap + "]"
-            return prewrap
+            op = escape(self._kind)
+            if self.second == None and not self.should_postfix():
+                left = ""
+                right = describe_first
+            return f"{left}{spacer}{op}{spacer}{right}"
 
         def __repr__(self):
             if self._kind == "NUMBER":
                 return f"{self._value}"
-            if self._kind in ARITHMETICS.keys():
-                return self._kind
             out = [self._kind, self.first, self.second]
             out = map(str, filter(None, out))  # type: ignore
             return "<" + " ".join(out) + ">"
@@ -247,28 +208,11 @@ class Evaluator:
                 return str(self)
             return str(final_value)
 
-        def is_collection(self):
-            if self.detail != None and isinstance(self.detail, SetResult):
-                return True
-            return False
-
         def is_diceroll(self):
-            return self._kind == "d" or self.is_dropkeepadd()
+            return self._kind == "d" or self.is_set_operation()
 
-        def is_dropkeepadd(self):
-            return self.is_selector() or self._kind in (
-                "p",
-                "k",
-                "!",
-                "!>",
-                "!<",
-                "!>=",
-                "!<=",
-                "!=",
-                "!~=",
-                "?",
-                "~?",
-            )
+        def is_set_operation(self):
+            return self._kind in ("k", "p", "?", "~?", "!", "{", "repeat")
 
         def is_selector(self):
             return self._kind in (
@@ -374,7 +318,7 @@ class Evaluator:
         return s
 
     @staticmethod
-    def register_infix(kind, func, bind_power, right_assoc=False):
+    def register_infix(kind, func, bind_power, right_assoc=False, spaces=False):
         def _as_infix(self, evaluator, left):
             self.first = left
             self.second = evaluator.expr(bind_power - (1 if right_assoc else 0))
@@ -383,6 +327,8 @@ class Evaluator:
 
         s = Evaluator.register_symbol(kind, bind_power)
         s.as_infix = _as_infix
+        if spaces:
+            s.should_spaces = lambda self: True
         return s
 
     @staticmethod
@@ -398,7 +344,7 @@ class Evaluator:
 
         s = Evaluator.register_symbol(kind, bind_power)
         s.as_infix = _as_postfix
-        s._postfix = True
+        s.should_postfix = lambda self: True
         return s
 
     @staticmethod
@@ -479,14 +425,14 @@ def roll(formula: str):
     return results
 
 
-def format_roll_results(results):
+def format_roll_results(results: list[Evaluator._Symbol]):
     out = ""
     for row in results:
         final_value = row.final_repr()
         out += (
-            codeblock(row.describe(uneval=True))
+            codeblock(row.describe())
             + f" ⇒ **{final_value}**"
-            + f"  |  {row.describe()}"
+            + f"  |  {row.describe(evaluated=True, top_level=True)}"
         )
         out += "\n"
     return out
@@ -599,14 +545,21 @@ def _repeat_function(node, x, y, ev):
         node.detail = MultiExpr()
         return
 
-    flats = [FlatExpr(x.get_value(), x.describe(), x.final_repr())]
+    flats = [
+        FlatExpr(
+            x.get_value(), x.describe(), x.describe(evaluated=True), x.final_repr()
+        )
+    ]
     redo_node = x
     for i in range(reps - 1):
         ev._jump_to(ev.token_list.index(node) + 2)  # skip function open paren
         redo_node = ev.expr()
         flats.append(
             FlatExpr(
-                redo_node.get_value(), redo_node.describe(), redo_node.final_repr()
+                redo_node.get_value(),
+                redo_node.describe(),
+                redo_node.describe(evaluated=True),
+                redo_node.final_repr(),
             )
         )
     # jump forward past end of function parentheses
@@ -687,6 +640,7 @@ def _left_brace_nud(self, ev: Evaluator):
             FlatExpr(
                 content_node.get_value(),
                 content_node.describe(),
+                content_node.describe(evaluated=True),
                 content_node.final_repr(),
             )
         )
@@ -753,8 +707,8 @@ Evaluator.register_infix(
     "^", build_arithmetic_operator("^"), 110, right_assoc=True
 ).as_prefix = _reflex_nud  # type: ignore
 
-Evaluator.register_infix("C", _choose_operator, 130)._spaces = True
-Evaluator.register_infix("choose", _choose_operator, 130)._spaces = True
+Evaluator.register_infix("C", _choose_operator, 130, spaces=True)
+Evaluator.register_infix("choose", _choose_operator, 130, spaces=True)
 
 # Set Operators
 Evaluator.register_infix("k", _set_keep_operator, 180)
@@ -767,6 +721,8 @@ Evaluator.register_hybrid_infix_postfix(
     _explode_postfix_operator,
     _explode_check_right_valid,
     180,
+).should_postfix = (
+    lambda self: self._kind == "!" and self.second is None
 )
 
 # Set Selectors
@@ -777,9 +733,11 @@ Evaluator.register_symbol("odd").as_prefix = build_selector_nud(EvenOddSelector(
 
 # Comparisons
 for comp in COMPARISONS.keys():
-    Evaluator.register_infix(comp, build_infix_comparison(comp), 5)._spaces = True
+    Evaluator.register_infix(comp, build_infix_comparison(comp), 5)
 for comp in COMPARISONS.keys():
-    Evaluator.register_prefix(comp, build_prefix_comparison(comp), 190)  # type: ignore
+    Evaluator.register_prefix(
+        comp, build_prefix_comparison(comp), 190
+    ).should_spaces = (lambda self: self.second != None)
 
 # Dice
 Evaluator.register_infix("d", _dice_operator, 200)

@@ -56,29 +56,36 @@ class ExprResult:
         return item
 
     @staticmethod
-    def description(item):
+    def description(item, evaluated=False, top_level=False):
         if isinstance(item, ExprResult):
+            if evaluated:
+                return item.get_evaluated(top_level)
             return item.get_description()
         elif isinstance(item, SetElement):
-            return ExprResult.description(item.item)
+            return ExprResult.description(item.item, evaluated)
         return f"{item}"
 
     # Numerical value for this expression.
     def get_value(self):
         raise NotImplementedError("Value missing for this expression.")
 
-    # String description of how this expression was evaluated.
+    # String description of this expression.
     def get_description(self) -> str:
         raise NotImplementedError("Description missing for this expression.")
+
+    # String description of details on how this expression is evaluated.
+    def get_evaluated(self, top_level: bool = False) -> str:
+        return self.get_description()
 
 
 # Represents an expression which resolved to a single value,
 # storing only the final value and description strings.
 @total_ordering
 class FlatExpr(ExprResult):
-    def __init__(self, value, description, subrepr):
-        self.value = value
-        self.description = description
+    def __init__(self, value, described, evaluated, subrepr):
+        self.subvalue = value
+        self.described = described
+        self.evaluated = evaluated
         self.subrepr = subrepr
 
     def __repr__(self):
@@ -87,16 +94,19 @@ class FlatExpr(ExprResult):
         return super().__repr__()
 
     def get_value(self):
-        return self.value
+        return self.subvalue
 
     def get_description(self):
-        return self.description
+        return self.described
+
+    def get_evaluated(self, top_level=False) -> str:
+        return self.evaluated
 
     def __eq__(self, other):
-        return self.value == ExprResult.value(other)
+        return self.subvalue == ExprResult.value(other)
 
     def __lt__(self, other):
-        return self.value < ExprResult.value(other)
+        return self.subvalue < ExprResult.value(other)
 
 
 # For representing a collection of elements upon which set operations may be performed.
@@ -202,7 +212,13 @@ class DiceValues(SetResult):
 
     # Override to wrap and use `+` to join.
     def get_description(self):
-        return "(" + super().get_description(joiner="+") + ")=" + str(self.get_value())
+        return (
+            "("
+            + super().get_description(joiner="+")
+            + "="
+            + str(self.get_value())
+            + ")"
+        )
 
     def get_dice_size(self):
         return self.dice_size
@@ -241,17 +257,35 @@ class MultiExpr(SetResult):
     def copy(self):
         return MultiExpr(self.elements)
 
-    def get_description(self, joiner="\n"):
-        out = "{\n"
-        out += joiner.join(
-            [
-                element.formatted(
-                    f"**{str(element.item)}**  |  {ExprResult.description(element.item)}"
-                )
-                for i, element in enumerate(self.elements)
-            ]
+    def get_description(self, joiner=", "):
+        return (
+            "{"
+            + joiner.join(
+                element.formatted(ExprResult.description(element.item))
+                for element in self.elements
+            )
+            + "}"
         )
-        return out + "\n}"
+
+    def get_evaluated(self, top_level=False) -> str:
+        inner = ""
+        if top_level:
+            inner = (
+                "\n"
+                + "\n".join(
+                    element.formatted(
+                        f"**{str(element.item)}**  |  {ExprResult.description(element.item, True)}"
+                    )
+                    for element in self.elements
+                )
+                + " "
+            )
+        else:
+            inner = ", ".join(
+                element.formatted(ExprResult.description(element.item, True))
+                for element in self.elements
+            )
+        return "{" + inner + "}"
 
 
 class AggregateValues(SetResult):
@@ -328,7 +362,9 @@ def _select_conditional(
     setr: SetResult, condition: typing.Callable[..., bool]
 ) -> list[int]:
     elements = setr.get_remaining_enumerated()
-    matched_pairs = list(filter(lambda pair: condition(pair[1]), elements))
+    matched_pairs = list(
+        filter(lambda pair: condition(ExprResult.value(pair[1])), elements)
+    )
     return [pair[0] for pair in matched_pairs]
 
 
