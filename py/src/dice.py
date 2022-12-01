@@ -19,7 +19,7 @@ TOKEN_SPEC = [
     ("SETOP",    r"~?\?|[kp]|[!x]o?|rr?"),      # Set operators
     ("SETSEL",   r"[hl]|even|odd"),             # Set selectors, not including comparisons
     ("COMP",     r"[><~]=|[><=]"),              # Comparisons, also usable as set selectors
-    ("OP",       r"[+\-*×/÷%^()]"),             # Generic operators
+    ("OP",       r"[+\-*×/÷%^(){}]"),           # Generic operators
     ("SEP",      r"[,]"),                       # Separators like commas
     ("END",      r"[;\n]"),                     # Line end / break characters
     ("SKIP",     r"[ \t]+"),                    # Skip over spaces and tabs
@@ -102,43 +102,6 @@ def symbolize(symbol_table, intext: str):
 # Relies on a static symbol table for now; not thread-safe. haha python
 class Evaluator:
     SYMBOL_TABLE = {}
-
-    def __init__(self, tokens):
-        self.token_list = tokens
-        self.iter_pos = -1
-        self.token_current = None
-        self._next()
-
-    def _jump_to(self, token_pos):
-        try:
-            self.token_current = self.token_list[token_pos]
-            self.iter_pos = token_pos
-        except IndexError as err:
-            raise IndexError(f"Can't iterate from token position {token_pos}") from err
-        return self.token_current
-
-    def _next(self):
-        try:
-            self.token_current = self.token_list[self.iter_pos + 1]
-            self.iter_pos += 1
-        except (StopIteration, IndexError) as err:
-            raise StopIteration(f"Expected further input. Missing operands?") from err
-        return self.token_current
-
-    def _current(self):
-        return self.token_current
-
-    def peek(self):
-        try:
-            peeked = self.token_list[self.iter_pos]
-        except IndexError:
-            return None
-        return peeked
-
-    def advance(self, expected=None):
-        if expected and self._current()._kind != expected:  # type: ignore
-            raise SyntaxError(f"Missing expected: {expected}")
-        return self._next()
 
     # Syntax tree base class
     class _Symbol:
@@ -331,6 +294,43 @@ class Evaluator:
                     has_dice = has_dice or self.second.contains_diceroll()
                 return has_dice
             return False
+
+    def __init__(self, tokens):
+        self.token_list = tokens
+        self.iter_pos = -1
+        self.token_current = None
+        self._next()
+
+    def _jump_to(self, token_pos):
+        try:
+            self.token_current = self.token_list[token_pos]
+            self.iter_pos = token_pos
+        except IndexError as err:
+            raise IndexError(f"Can't iterate from token position {token_pos}") from err
+        return self.token_current
+
+    def _next(self):
+        try:
+            self.token_current = self.token_list[self.iter_pos + 1]
+            self.iter_pos += 1
+        except (StopIteration, IndexError) as err:
+            raise StopIteration(f"Expected further input. Missing operands?") from err
+        return self.token_current
+
+    def _current(self):
+        return self.token_current
+
+    def peek(self) -> _Symbol | None:
+        try:
+            peeked = self.token_list[self.iter_pos]
+        except IndexError:
+            return None
+        return peeked
+
+    def advance(self, expected=None):
+        if expected and self._current()._kind != expected:  # type: ignore
+            raise SyntaxError(f"Missing expected: {expected}")
+        return self._next()
 
     # Parse and evaluate an expression from symbols. Recursive.
     def expr(self, right_bp=0):
@@ -682,6 +682,31 @@ def _left_paren_nud(self, ev):
     return self
 
 
+def _left_brace_nud(self, ev: Evaluator):
+    contents = []
+    peeked = ev.peek()
+    while peeked and peeked._kind != "}":
+        content_node: Evaluator._Symbol = ev.expr()
+        contents.append(
+            FlatExpr(
+                content_node.get_value(),
+                content_node.describe(),
+                content_node.final_repr(),
+            )
+        )
+        peeked = ev.peek()
+        try:
+            ev.advance(expected=",")
+            peeked = ev.peek()
+        except SyntaxError:
+            break
+    if not peeked:
+        raise SyntaxError("Mismatched braces.")
+    ev.advance(expected="}")
+    self.detail = MultiExpr(contents)
+    return self
+
+
 def build_dash_nud(bind_power):
     def _dash_nud(self, ev):
         follower = ev.peek()
@@ -700,6 +725,8 @@ Evaluator.register_symbol("END")
 Evaluator.register_symbol("(").as_prefix = _left_paren_nud  # type: ignore
 Evaluator.register_symbol(")")
 Evaluator.register_symbol(",")
+Evaluator.register_symbol("{").as_prefix = _left_brace_nud  # type: ignore
+Evaluator.register_symbol("}")
 Evaluator.register_function_double("repeat", _repeat_function)
 Evaluator.register_function_single("sqrt", _sqrt_operator)
 Evaluator.register_function_single("fact", _factorial_operator)

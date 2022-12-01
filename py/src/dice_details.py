@@ -217,15 +217,13 @@ class DiceValues(SetResult):
 class SuccessValues(SetResult):
     def __init__(self, items):
         super().__init__(items)
+        self.set_value(self.get_remaining_count())
 
     def __repr__(self):
         return f"{self.get_value()} success" + ("es" if self.get_value() != 1 else "")
 
     def copy(self):
         return SuccessValues(self.elements)
-
-    def get_value(self):
-        return self.get_remaining_count()
 
     def get_description(self):
         return "(" + super().get_description() + ")⇒" + str(self)
@@ -236,6 +234,8 @@ class SuccessValues(SetResult):
 class MultiExpr(SetResult):
     def __init__(self, items=None):
         super().__init__(items)
+        if self.get_remaining_count() == 1:
+            self.set_value(self.get_remaining()[0].get_value())
 
     def __repr__(self):
         remain_count = self.get_remaining_count()
@@ -243,11 +243,6 @@ class MultiExpr(SetResult):
 
     def copy(self):
         return MultiExpr(self.elements)
-
-    def get_value(self):
-        if self.get_remaining_count() == 1:
-            return self.get_remaining()[0].get_value()
-        return None
 
     def get_description(self, joiner="\n"):
         out = "{\n"

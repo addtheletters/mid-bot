@@ -123,6 +123,13 @@ class DiceTest(RollTest):
         dice.roll("agg(3d10, ^)")
         dice.roll("agg(4d10, %)")
 
+    def test_braces(self):
+        dice.roll("{1, 2, 3, 4}")
+        dice.roll("{}")
+        dice.roll("{3d10}")
+        dice.roll("{2d3, 3d4}")
+        self.assertFirstRollEquals("{5, 10}kh1", 10)
+        self.assertFirstRollEquals("{100, 30}?=30", 1)
 
 class SetTest(unittest.TestCase):
     def setUp(self):
