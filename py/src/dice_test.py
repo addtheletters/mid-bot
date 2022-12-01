@@ -131,6 +131,18 @@ class DiceTest(RollTest):
         self.assertFirstRollEquals("{5, 10}kh1", 10)
         self.assertFirstRollEquals("{100, 30}?=30", 1)
 
+class HelpExamplesTest(unittest.TestCase):
+    def test_interpret_examples(self):
+        dice.roll("4d6?=5")
+        dice.roll("4d6kh3")
+        dice.roll("repeat(3d6, 5)pl2")
+        dice.roll("10d4!")
+        dice.roll("8d6!>4")
+        dice.roll("1d20+5 >= 15")
+        dice.roll("agg(3d8, *)")
+        dice.roll("agg(repeat(3d6+2, 4), +)")
+        dice.roll("1d20+5; 2d6+5")
+
 class SetTest(unittest.TestCase):
     def setUp(self):
         self.values = [10, 5, 3, 7, -5, 0, 6]
