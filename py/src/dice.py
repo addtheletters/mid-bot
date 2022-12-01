@@ -1,7 +1,6 @@
 # Dicerolling.
 # Parser and evaluator for dice roll inputs.
 
-import itertools
 import re
 import typing
 from math import factorial, sqrt
@@ -96,171 +95,6 @@ def symbolize(symbol_table, intext: str):
             current_roll.append(symbol_table["END"]())
         all_rolls.append(current_roll)
     return all_rolls
-
-
-# Produce a version of this collection which is evaluated by aggregating
-# using a provided function.
-def aggregate_using(collected, agg_func, agg_joiner=", "):
-    if not isinstance(collected, CollectedValues):
-        raise SyntaxError("Can't aggregate (operand not a collection)")
-
-    new_values = AggregateValues(
-        agg_func,
-        agg_joiner,
-        items=collected.items,
-        dropped=collected.dropped,
-        added=collected.added,
-    )
-    return new_values
-
-
-# For representing an expression which evaluated to a collection from which items
-# could have been added to or dropped from.
-# Items are expected to be repr'able, either a literal value or ExprResult
-class CollectedValues(ExprResult):
-    def __init__(self, items=None, dropped=None, added=None):
-        super().__init__()
-        # dropped and added are lists of item indices, not items themselves
-        self.items = items if items else []
-        self.dropped = dropped if dropped else []
-        self.added = added if added else []
-
-    def __repr__(self):
-        return f"{len(self.items)} item" + ("s" if len(self.items) != 1 else "")
-
-    def copy(self):
-        return CollectedValues(
-            self.items.copy(), self.dropped.copy(), self.added.copy()
-        )
-
-    # Override. Default to returning the sum of non-dropped items.
-    def get_value(self):
-        return self.total()
-
-    def format_item(self, base, index, formatting=True):
-        if not formatting:
-            return base
-        if index in self.dropped:
-            base = f"~~{base}~~"
-        if index in self.added:
-            base = f"_{base}_"
-        return base
-
-    # Override to list collection contents.
-    def get_description(self, joiner=", "):
-        out = joiner.join(
-            [
-                self.format_item(ExprResult.description(self.items[i]), i)
-                for i in range(len(self.items))
-            ]
-        )
-        return out
-
-    # Returns all items, including dropped ones.
-    def get_all_items(self):
-        return self.items
-
-    # Exclude dropped items.
-    def get_remaining(self):
-        remaining = []
-        for i in range(len(self.items)):
-            if i not in self.dropped:
-                remaining.append(self.items[i])
-        return remaining
-
-    def get_remaining_count(self):
-        return len(self.items) - len(self.dropped)
-
-    # Aggregate together non-dropped items.
-    def aggregate(self, func=None):
-        values = [ExprResult.value(x) for x in self.get_remaining()]
-        return list(itertools.accumulate(values, func))
-
-    def total(self, func=None):
-        if self.get_remaining_count() < 1:
-            return 0
-        return self.aggregate(func)[-1]
-
-
-# Represents several expressions' results collected together by one operator,
-# such as `repeat()`.
-class MultiExpr(CollectedValues):
-    def __init__(self, contents=None, copy_source=None):
-        if copy_source != None:
-            super().__init__(
-                items=copy_source.items.copy(),
-                dropped=copy_source.dropped.copy(),
-                added=copy_source.added.copy(),
-            )
-        else:
-            super().__init__(items=contents)
-
-    def __repr__(self):
-        remain_count = self.get_remaining_count()
-        return f"{remain_count} result" + ("s" if remain_count != 1 else "")
-
-    def copy(self):
-        return MultiExpr(copy_source=self)
-
-    def get_value(self):
-        if self.get_remaining_count() == 1:
-            return self.get_remaining()[0].get_value()
-        return None
-
-    def get_description(self, joiner="\n"):
-        out = "{\n"
-        out += joiner.join(
-            [
-                self.format_item(
-                    f"**{str(self.items[i])}**  |  {ExprResult.description(self.items[i])}",
-                    i,
-                )
-                for i in range(len(self.items))
-            ]
-        )
-        return out + "\n}"
-
-
-class AggregateValues(CollectedValues):
-    def __init__(self, agg_func, agg_joiner, items=None, dropped=None, added=None):
-        super().__init__(items, dropped, added)
-        self.agg_func = agg_func  # lambda function to aggregate with
-        self.agg_joiner = agg_joiner  # string representing operator used to aggregate
-
-    def __repr__(self):
-        return str(self.get_value())
-
-    def copy(self):
-        return AggregateValues(
-            self.agg_func,
-            self.agg_joiner,
-            self.items.copy(),
-            self.dropped.copy(),
-            self.added.copy(),
-        )
-
-    # Override to apply aggregate operation.
-    def total(self):
-        return super().total(func=self.agg_func)
-
-    # Override to wrap items in parens if necessary.
-    def format_item(self, base, index):
-        wrap = base
-        if (
-            isinstance(self.items[index], ExprResult)
-            and (base[0] != "(" or base[-1] != ")")
-            and (base[0] != "[" or base[-1] != "]")
-        ):
-            wrap = "(" + base + ")"
-        return super().format_item(wrap, index)
-
-    # Override to use appropriate joiner. Assume all aggregation operators are
-    # infix.
-    def get_description(self):
-        # We could append = (total) for consistency with dice rolls.
-        # Some tweaks to describe() would be needed, as a special case
-        # for `agg` but not `d` causes differences in formatting paths.
-        return "(" + super().get_description(joiner=escape(self.agg_joiner)) + ")"
 
 
 # Based on Pratt top-down operator precedence.
@@ -451,7 +285,7 @@ class Evaluator:
             return str(final_value)
 
         def is_collection(self):
-            if self.detail != None and isinstance(self.detail, CollectedValues):
+            if self.detail != None and isinstance(self.detail, SetResult):
                 return True
             return False
 
@@ -782,7 +616,7 @@ def _repeat_function(node, x, y, ev):
     # jump forward past end of function parentheses
     ev._jump_to(exit_iter_pos)
 
-    node.detail = MultiExpr(contents=flats)
+    node.detail = MultiExpr(flats)
 
 
 def build_success_lambda(compare_operator, target):
@@ -818,6 +652,14 @@ def build_arithmetic_operator(operator):
         node._value = ARITHMETICS[operator](x.get_value(), y.get_value())
 
     return _arithmetic_operator
+
+
+# Produce a version of this set which is evaluated by aggregating
+# using a provided function.
+def aggregate_using(setr, agg_func, agg_joiner=", "):
+    if not isinstance(setr, SetResult):
+        raise SyntaxError("Can't aggregate (operand not a set)")
+    return AggregateValues(agg_func, agg_joiner, items=setr.elements)
 
 
 def _aggregate_function(node, x, y, ev):

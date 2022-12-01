@@ -3,6 +3,8 @@ import typing
 from functools import total_ordering
 from random import randint
 
+from utils import escape
+
 EXPLOSION_CAP = 99
 
 
@@ -145,7 +147,7 @@ class SetResult(ExprResult):
         return len(self.elements)
 
     # Returns all items, including dropped ones.
-    def get_all_items(self):
+    def get_all_items(self) -> list[SetElement]:
         return [element.item for element in self.elements]
 
     # Exclude dropped items.
@@ -227,6 +229,74 @@ class SuccessValues(SetResult):
 
     def get_description(self):
         return "(" + super().get_description() + ")⇒" + str(self)
+
+
+# Represents several expressions' results collected together by one operator,
+# such as `repeat()`.
+class MultiExpr(SetResult):
+    def __init__(self, items=None):
+        super().__init__(items)
+
+    def __repr__(self):
+        remain_count = self.get_remaining_count()
+        return f"{remain_count} result" + ("s" if remain_count != 1 else "")
+
+    def copy(self):
+        return MultiExpr(self.elements)
+
+    def get_value(self):
+        if self.get_remaining_count() == 1:
+            return self.get_remaining()[0].get_value()
+        return None
+
+    def get_description(self, joiner="\n"):
+        out = "{\n"
+        out += joiner.join(
+            [
+                element.formatted(
+                    f"**{str(element.item)}**  |  {ExprResult.description(element.item)}"
+                )
+                for i, element in enumerate(self.elements)
+            ]
+        )
+        return out + "\n}"
+
+
+class AggregateValues(SetResult):
+    def __init__(self, agg_func, agg_joiner, items=None):
+        super().__init__(items)
+        self.agg_func = agg_func  # lambda function to aggregate with
+        self.agg_joiner = agg_joiner  # string representing operator used to aggregate
+        self.set_value(self.total())
+
+    def __repr__(self):
+        return str(self.get_value())
+
+    def copy(self):
+        return AggregateValues(self.agg_func, self.agg_joiner, self.elements)
+
+    # Override to apply aggregate operation.
+    def total(self):
+        return super().total(func=self.agg_func)
+
+    # Override to wrap items in parens if necessary.
+    def format_element(self, element: SetElement):
+        wrap = ExprResult.description(element.item)
+        if (
+            isinstance(element.item, ExprResult)
+            and (wrap[0] != "(" or wrap[-1] != ")")
+            and (wrap[0] != "[" or wrap[-1] != "]")
+        ):
+            wrap = "(" + wrap + ")"
+        return element.formatted(wrap)
+
+    # Override to use appropriate joiner. Assume all aggregation operators are
+    # infix.
+    def get_description(self):
+        # We could append = (total) for consistency with dice rolls.
+        # Some tweaks to describe() would be needed, as a special case
+        # for `agg` but not `d` causes differences in formatting paths.
+        return "(" + super().get_description(joiner=escape(self.agg_joiner)) + ")"
 
 
 class SetSelector(ExprResult):

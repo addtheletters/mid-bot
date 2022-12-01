@@ -1,6 +1,7 @@
+import unittest
+
 import dice
 import dice_details
-import unittest
 
 
 class RollTest(unittest.TestCase):
@@ -81,7 +82,7 @@ class DiceTest(RollTest):
         dice.roll("8d4?=3")
         dice.roll("10d4?>=3")
         dice.roll("10d4?<=3")
-        # dice.roll("repeat(3d6, 10)?>=4")
+        dice.roll("repeat(3d6, 10)?>=4")
         dice.roll("(10d4?=3)+10d6")
         dice.roll("((10d4?=(1d4!))+10)d6")
         dice.roll("10d6?~=1")
@@ -105,17 +106,15 @@ class DiceTest(RollTest):
         dice.roll("8d10!>=4")
         dice.roll("2d4!~=3")
 
-    @unittest.skip  # type: ignore
     def test_interpret_repeat(self):
         dice.roll("repeat(1, 3)")
         dice.roll("repeat(4d6kh3, 6)")
-        dice.roll("repeat(3d6, 5)dl2")
+        dice.roll("repeat(3d6, 5)pl2")
         dice.roll("repeat(10d20-5d6, 10)kh3")
         dice.roll("repeat(5d20kh3+sqrt(4*8), 10)")
         dice.roll("repeat(repeat(4*3d8, 2), 3)")
-        dice.roll("repeat(3d10, repeat(d8, 4)kh1)dl1")
+        dice.roll("repeat(3d10, repeat(d8, 4)kh1)pl1")
 
-    @unittest.skip  # type: ignore
     def test_interpret_aggregate(self):
         dice.roll("agg(10d6, +)")
         dice.roll("agg(10d4, -)")
