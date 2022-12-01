@@ -131,6 +131,7 @@ class DiceTest(RollTest):
         self.assertFirstRollEquals("{5, 10}kh1", 10)
         self.assertFirstRollEquals("{100, 30}?=30", 1)
 
+
 class HelpExamplesTest(unittest.TestCase):
     def test_interpret_examples(self):
         dice.roll("4d6?=5")
@@ -143,6 +144,7 @@ class HelpExamplesTest(unittest.TestCase):
         dice.roll("agg(repeat(3d6+2, 4), +)")
         dice.roll("1d20+5; 2d6+5")
 
+
 class SetTest(unittest.TestCase):
     def setUp(self):
         self.values = [10, 5, 3, 7, -5, 0, 6]
@@ -152,6 +154,7 @@ class SetTest(unittest.TestCase):
         self.assertEqual(self.setr.get_remaining_count(), len(self.values))
         set_items = self.setr.get_all_items()
         self.assertListEqual(set_items, self.values)
+        self.assertEqual(self.setr.total(), 26)
 
     def test_select_low_high(self):
         select_zero = dice_details._select_low_high(self.setr, 0, high=False)

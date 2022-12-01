@@ -589,10 +589,6 @@ def _sqrt_operator(node, x):
     node._value = sqrt(x.get_value())
 
 
-def _remainder_operator(node, x, y):
-    node._value = x.get_value() % y.get_value()
-
-
 def _repeat_function(node, x, y, ev):
     exit_iter_pos = ev.iter_pos
 

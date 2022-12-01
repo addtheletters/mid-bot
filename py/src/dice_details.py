@@ -1,4 +1,5 @@
-import itertools
+import functools
+import operator
 import typing
 from functools import total_ordering
 from random import randint
@@ -167,16 +168,12 @@ class SetResult(ExprResult):
             )
         ]
 
-    # Aggregate together non-dropped items.
-    # If `func` remains None, default behavior is a sum.
-    def aggregate(self, func=None):
-        values = [ExprResult.value(item) for item in self.get_remaining()]
-        return list(itertools.accumulate(values, func))
-
-    def total(self, func=None):
+    # Accumulate remaining items' values, by default using a sum.
+    def total(self, func=operator.add):
         if self.get_remaining_count() < 1:
             return 0
-        return self.aggregate(func)[-1]  # TODO replace with itertools.reduce?
+        values = [ExprResult.value(item) for item in self.get_remaining()]
+        return functools.reduce(func, values)
 
     # Drop items located at specific indices
     def drop_indices(self, indices: list[int]):
