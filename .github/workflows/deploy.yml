@@ -38,12 +38,14 @@ jobs:
           SESSION: ${{ secrets.TMUX_SESSION_NAME }}
         run: ssh deployment "tmux kill-session -t $SESSION"
         continue-on-error: true
-      - name: Check out at latest tag
+      - name: Check out at the triggering commit
+        env:
+          GIT_SHA: ${{ github.sha }}
         run: |
           ssh deployment '
             cd mid-bot
             git fetch
-            git checkout $(git describe --tags $(git rev-list --tags --max-count=1))
+            git checkout $GIT_SHA
           '
       - name: Install requirements
         run: |
