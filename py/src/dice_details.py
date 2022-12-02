@@ -231,7 +231,7 @@ class MultiExpr(SetResult):
         self.right_wrap = "}"
         super().__init__(items)
         if self.get_remaining_count() == 1:
-            self.set_value(self.get_remaining()[0].get_value())
+            self.set_value(ExprResult.value(self.get_remaining()[0]))
 
     def __repr__(self):
         remain_count = self.get_remaining_count()
