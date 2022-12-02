@@ -466,12 +466,14 @@ def _set_drop_operator(node, x, y):
 
 def _set_count_pass_operator(node, x, y):
     setr, setsel = assert_set_operands(x.detail, y.detail)
-    node.detail = set_op_count(setr.copy(), setsel.apply(setr))
+    node.detail = set_op_count(SuccessValues(setr.elements), setsel.apply(setr))
 
 
 def _set_count_fail_operator(node, x, y):
     setr, setsel = assert_set_operands(x.detail, y.detail)
-    node.detail = set_op_count(setr.copy(), setsel.apply(setr), invert=True)
+    node.detail = set_op_count(
+        SuccessValues(setr.elements), setsel.apply(setr), invert=True
+    )
 
 
 def _select_low_operator(node, x):

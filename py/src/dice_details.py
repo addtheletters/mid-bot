@@ -224,28 +224,11 @@ class DiceValues(SetResult):
         return self.dice_size
 
 
-# The result of a conditional filter applied to collected values, conceptually
-# some number of dice rolls that successful meet some operator's condition.
-# Total value is evaluated to the number of non-dropped items remaining.
-class SuccessValues(SetResult):
-    def __init__(self, items):
-        super().__init__(items)
-        self.set_value(self.get_remaining_count())
-
-    def __repr__(self):
-        return f"{self.get_value()} success" + ("es" if self.get_value() != 1 else "")
-
-    def copy(self):
-        return SuccessValues(self.elements)
-
-    def get_description(self):
-        return "(" + super().get_description() + ")⇒" + str(self)
-
-
-# Represents several expressions' results collected together by one operator,
-# such as `repeat()`.
+# Represents several expressions' results collected together.
 class MultiExpr(SetResult):
     def __init__(self, items=None):
+        self.left_wrap = "{"
+        self.right_wrap = "}"
         super().__init__(items)
         if self.get_remaining_count() == 1:
             self.set_value(self.get_remaining()[0].get_value())
@@ -259,20 +242,20 @@ class MultiExpr(SetResult):
 
     def get_description(self, joiner=", "):
         return (
-            "{"
+            self.left_wrap
             + joiner.join(
                 element.formatted(ExprResult.description(element.item))
                 for element in self.elements
             )
-            + "}"
+            + self.right_wrap
         )
 
-    def get_evaluated(self, top_level=False) -> str:
+    def get_evaluated(self, top_level=False, joiner=", ") -> str:
         inner = ""
         if top_level:
             inner = (
                 "\n"
-                + "\n".join(
+                + f"{joiner}\n".join(
                     element.formatted(
                         f"**{str(element.item)}**  |  {ExprResult.description(element.item, True)}"
                     )
@@ -281,19 +264,55 @@ class MultiExpr(SetResult):
                 + " "
             )
         else:
-            inner = ", ".join(
+            inner = joiner.join(
                 element.formatted(ExprResult.description(element.item, True))
                 for element in self.elements
             )
-        return "{" + inner + "}"
+
+        # Show the result total or count if there are multiple elements and we've set one.
+        result = ""
+        if (
+            self.get_remaining_count() > 1
+            and self.result_value
+            and not isinstance(self.result_value, SetResult)
+        ):
+            result = "⇒" + str(self.result_value)
+            if top_level:
+                result = "\n" + result
+        return self.left_wrap + inner + result + self.right_wrap
 
 
-class AggregateValues(SetResult):
+# The result of a conditional filter applied to collected values, conceptually
+# some number of dice rolls that successful meet some operator's condition.
+# Total value is evaluated to the number of non-dropped items remaining.
+class SuccessValues(MultiExpr):
+    def __init__(self, items):
+        super().__init__(items)
+        self.set_value(self.get_remaining_count())
+
+    def __repr__(self):
+        remaining = self.get_remaining_count()
+        return f"{remaining} success" + ("es" if remaining != 1 else "")
+
+    def copy(self):
+        return SuccessValues(self.elements)
+
+    def get_description(self):
+        return "(" + super().get_description() + ")⇒" + str(self)
+
+    def get_evaluated(self, top_level=False) -> str:
+        # Don't spread evaluation across multiple lines.
+        return super().get_evaluated(top_level=False)
+
+
+class AggregateValues(MultiExpr):
     def __init__(self, agg_func, agg_joiner, items=None):
         super().__init__(items)
         self.agg_func = agg_func  # lambda function to aggregate with
         self.agg_joiner = agg_joiner  # string representing operator used to aggregate
         self.set_value(self.total())
+        self.left_wrap = "("
+        self.right_wrap = ")"
 
     def __repr__(self):
         return str(self.get_value())
@@ -322,7 +341,11 @@ class AggregateValues(SetResult):
         # We could append = (total) for consistency with dice rolls.
         # Some tweaks to describe() would be needed, as a special case
         # for `agg` but not `d` causes differences in formatting paths.
-        return "(" + super().get_description(joiner=escape(self.agg_joiner)) + ")"
+        return super().get_description(joiner=escape(self.agg_joiner))
+
+    def get_evaluated(self, top_level=False) -> str:
+        # Don't spread evaluation across multiple lines.
+        return super().get_evaluated(top_level=False, joiner=escape(self.agg_joiner))
 
 
 class SetSelector(ExprResult):
