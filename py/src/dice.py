@@ -456,24 +456,22 @@ def assert_set_operands(setr, setsel):
 
 def _set_keep_operator(node, x, y):
     setr, setsel = assert_set_operands(x.detail, y.detail)
-    node.detail = set_op_keep(setr.copy(), setsel.apply(setr))
+    node.detail = set_op_keep(setr, setsel.apply(setr))
 
 
 def _set_drop_operator(node, x, y):
     setr, setsel = assert_set_operands(x.detail, y.detail)
-    node.detail = set_op_keep(setr.copy(), setsel.apply(setr), invert=True)
+    node.detail = set_op_keep(setr, setsel.apply(setr), invert=True)
 
 
 def _set_count_pass_operator(node, x, y):
     setr, setsel = assert_set_operands(x.detail, y.detail)
-    node.detail = set_op_count(SuccessValues(setr.elements), setsel.apply(setr))
+    node.detail = set_op_count(setr, setsel.apply(setr))
 
 
 def _set_count_fail_operator(node, x, y):
     setr, setsel = assert_set_operands(x.detail, y.detail)
-    node.detail = set_op_count(
-        SuccessValues(setr.elements), setsel.apply(setr), invert=True
-    )
+    node.detail = set_op_count(setr, setsel.apply(setr), invert=True)
 
 
 def _select_low_operator(node, x):
@@ -510,6 +508,22 @@ def _explode_infix_operator(node, x, y):
     if not isinstance(dice, DiceValues):
         raise SyntaxError("Invalid operand for explode (not a dice result)")
     node.detail = dice_explode(dice, setsel)
+
+
+def _explode_once_postfix_operator(node, x):
+    if not isinstance(x.detail, DiceValues):
+        raise SyntaxError("Invalid operand for explode (not a dice result)")
+    dice: DiceValues = x.detail
+    node.detail = dice_explode(
+        dice, ConditionalSelector(lambda a: a >= dice.get_dice_size()), max_explodes=1
+    )
+
+
+def _explode_once_infix_operator(node, x, y):
+    dice, setsel = assert_set_operands(x.detail, y.detail)
+    if not isinstance(dice, DiceValues):
+        raise SyntaxError("Invalid operand for explode (not a dice result)")
+    node.detail = dice_explode(dice, setsel, max_explodes=1)
 
 
 def _negate_operator(node, x):
@@ -725,6 +739,15 @@ Evaluator.register_hybrid_infix_postfix(
     180,
 ).should_postfix = (
     lambda self: self._kind == "!" and self.second is None
+)
+Evaluator.register_hybrid_infix_postfix(
+    "!o",
+    _explode_once_infix_operator,
+    _explode_once_postfix_operator,
+    _explode_check_right_valid,
+    180,
+).should_postfix = (
+    lambda self: self._kind == "!o" and self.second is None
 )
 
 # Set Selectors

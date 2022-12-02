@@ -462,14 +462,15 @@ def dice_roll(count, size):
 # Drops items not matched by the selector.
 # `invert` inverts the behavior, dropping matched items and counting unmatched ones.
 def set_op_count(setr: SetResult, selected: list[int], invert=False):
-    count = setr.get_remaining_count() - len(selected)
+    result = SuccessValues(setr.elements)
+    count = result.get_remaining_count() - len(selected)
     to_drop = selected
     if not invert:
         count = len(selected)
-        to_drop = invert_selection(setr.get_all_count(), selected)
-    setr.drop_indices(to_drop)
-    setr.set_value(count)
-    return setr
+        to_drop = invert_selection(result.get_all_count(), selected)
+    result.drop_indices(to_drop)
+    result.set_value(count)
+    return result
 
 
 # Set operator.
@@ -477,12 +478,13 @@ def set_op_count(setr: SetResult, selected: list[int], invert=False):
 # Drops items not matched by the selector.
 # `invert` inverts the behavior, dropping matched items and adding unmatched ones.
 def set_op_keep(setr: SetResult, selected: list[int], invert=False):
+    result = setr.copy()
     to_drop = selected
     if not invert:
-        to_drop = invert_selection(setr.get_all_count(), selected)
-    setr.drop_indices(to_drop)
-    setr.set_value(setr.total())
-    return setr
+        to_drop = invert_selection(result.get_all_count(), selected)
+    result.drop_indices(to_drop)
+    result.set_value(result.total())
+    return result
 
 
 # Set operator for dice.
