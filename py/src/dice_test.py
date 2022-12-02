@@ -135,6 +135,13 @@ class DiceTest(RollTest):
         self.assertFirstRollEquals("{2, 4, 6, 3}keven", 12)
         self.assertFirstRollEquals("{2, 4, 6, 3}podd", 12)
 
+    def test_explode_once(self):
+        dice.roll("10d3!")
+        dice.roll("10d3!o")
+        dice.roll("10d3!o=2")
+        self.assertFirstRollEquals("3d1!o", 6)
+        self.assertFirstRollEquals("3d1!o>1", 3)
+
 
 class HelpExamplesTest(unittest.TestCase):
     def test_interpret_examples(self):
