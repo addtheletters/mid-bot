@@ -1,7 +1,6 @@
 import unittest
 
-import dice
-import dice_details
+import dice, dice_details
 
 
 class RollTest(unittest.TestCase):
