@@ -21,5 +21,3 @@ if __name__ == "__main__":
     client = MidClient()
     client.run(TOKEN)
     log.info("Bot stopped running.")
-else:
-    log.info("Bot was not started.")

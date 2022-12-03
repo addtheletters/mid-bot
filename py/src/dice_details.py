@@ -193,9 +193,13 @@ class SetResult(ExprResult):
             )
 
     # Add items as new set elements
-    def add_items(self, items: list):
+    def append_items(self, items: list):
         for item in items:
             self.elements.append(SetElement(item=item, dropped=False, added=True))
+
+    # Add item before a specific index in the list of elements
+    def insert_item(self, index: int, item):
+        self.elements.insert(index, SetElement(item=item, dropped=False, added=True))
 
 
 class DiceValues(SetResult):
@@ -490,7 +494,10 @@ def set_op_keep(setr: SetResult, selected: list[int], invert=False):
 # Set operator for dice.
 # Roll another die for any matches and add it to the total.
 # For new dice added this way, each match adds yet another die, up to `max_explodes` times.
-def dice_explode(dice: DiceValues, selector: SetSelector, max_explodes=EXPLOSION_CAP):
+# With `reroll` set to True, the original matched die is removed.
+def dice_explode(
+    dice: DiceValues, selector: SetSelector, max_explodes=EXPLOSION_CAP, reroll=False
+):
     new_dice = dice.copy()
 
     explosions = 0
@@ -499,13 +506,18 @@ def dice_explode(dice: DiceValues, selector: SetSelector, max_explodes=EXPLOSION
     has_exploded: list[int] = []
 
     while explosions < max_explodes and len(should_explode) > 0:
+        exploded_values = []
+        new_exploded_indices = []
         for i in should_explode:
             exploded_values.append(single_roll(new_dice.dice_size))
+            new_exploded_indices.append(i)
             has_exploded.append(i)
 
         explosions += 1
-        new_dice.add_items(exploded_values)
-        exploded_values = []
+        new_dice.append_items(exploded_values)
+        if reroll:
+            new_dice.drop_indices(new_exploded_indices)
+        
         # this is not very performant. TODO have the selector apply to only the new values
         should_explode = [i for i in selector.apply(new_dice) if i not in has_exploded]
 

@@ -526,6 +526,20 @@ def _explode_once_infix_operator(node, x, y):
     node.detail = dice_explode(dice, setsel, max_explodes=1)
 
 
+def _reroll_once_operator(node, x, y):
+    dice, setsel = assert_set_operands(x.detail, y.detail)
+    if not isinstance(dice, DiceValues):
+        raise SyntaxError("Invalid operand for reroll (not a dice result)")
+    node.detail = dice_explode(dice, setsel, max_explodes=1, reroll=True)
+
+
+def _reroll_recursive_operator(node, x, y):
+    dice, setsel = assert_set_operands(x.detail, y.detail)
+    if not isinstance(dice, DiceValues):
+        raise SyntaxError("Invalid operand for reroll (not a dice result)")
+    node.detail = dice_explode(dice, setsel, max_explodes=EXPLOSION_CAP, reroll=True)
+
+
 def _negate_operator(node, x):
     node._value = -x.get_value()
 
@@ -749,6 +763,8 @@ Evaluator.register_hybrid_infix_postfix(
 ).should_postfix = (
     lambda self: self._kind == "!o" and self.second is None
 )
+Evaluator.register_infix("r", _reroll_once_operator, 180)
+Evaluator.register_infix("rr", _reroll_recursive_operator, 180)
 
 # Set Selectors
 Evaluator.register_prefix("h", _select_high_operator, 190)
