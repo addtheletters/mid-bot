@@ -6,7 +6,7 @@ from random import randint
 
 from utils import escape
 
-EXPLOSION_CAP = 99
+REROLL_CAP = 99
 
 
 def force_integral(value, description="") -> int:
@@ -158,7 +158,7 @@ class SetResult(ExprResult):
         return len(self.elements)
 
     # Returns all items, including dropped ones.
-    def get_all_items(self) -> list[SetElement]:
+    def get_all_items(self) -> list:
         return [element.item for element in self.elements]
 
     # Exclude dropped items.
@@ -198,8 +198,8 @@ class SetResult(ExprResult):
             self.elements.append(SetElement(item=item, dropped=False, added=True))
 
     # Add item before a specific index in the list of elements
-    def insert_item(self, index: int, item):
-        self.elements.insert(index, SetElement(item=item, dropped=False, added=True))
+    def insert_item(self, index: int, item, dropped=False):
+        self.elements.insert(index, SetElement(item=item, dropped=dropped, added=True))
 
 
 class DiceValues(SetResult):
@@ -226,6 +226,18 @@ class DiceValues(SetResult):
 
     def get_dice_size(self):
         return self.dice_size
+
+    # Roll a new die and insert the value after `index`.
+    # With `keep` set to False, drops the existing item at `index`.
+    # Returns the rolled value.
+    def reroll_at(self, index: int, keep: bool = True):
+        if index < 0 or index >= len(self.elements):
+            raise IndexError(f"Can't reroll: no element, {index} is out of range")
+        if not keep:
+            self.drop_indices([index])
+        rerolled = single_roll(self.get_dice_size())
+        self.insert_item(index + 1, rerolled)
+        return rerolled
 
 
 # Represents several expressions' results collected together.
@@ -491,35 +503,91 @@ def set_op_keep(setr: SetResult, selected: list[int], invert=False):
     return result
 
 
-# Set operator for dice.
-# Roll another die for any matches and add it to the total.
-# For new dice added this way, each match adds yet another die, up to `max_explodes` times.
-# With `reroll` set to True, the original matched die is removed.
-def dice_explode(
-    dice: DiceValues, selector: SetSelector, max_explodes=EXPLOSION_CAP, reroll=False
+# Helper function for dice rerolls.
+# For each index in `should_reroll`, remove the item and roll another die.
+# All new rolled values are appended to the elements, preserving the original indices.
+def _dice_reroll_append(
+    dice: DiceValues,
+    should_reroll: list[int],
+    reroll_bases: dict[int, list[int] | int],
 ):
-    new_dice = dice.copy()
+    temp_dice = dice.copy()
+    new_rolls = []
 
-    explosions = 0
-    should_explode = selector.apply(new_dice)
-    exploded_values: list = []
-    has_exploded: list[int] = []
+    appended_index = dice.get_all_count()
+    for i in should_reroll:
+        base_index: int = i
+        if base_index not in reroll_bases:
+            reroll_bases[base_index] = []
+        elif isinstance(reroll_bases[i], int):
+            base_index = reroll_bases[i]  # type: ignore
 
-    while explosions < max_explodes and len(should_explode) > 0:
-        exploded_values = []
-        new_exploded_indices = []
-        for i in should_explode:
-            exploded_values.append(single_roll(new_dice.dice_size))
-            new_exploded_indices.append(i)
-            has_exploded.append(i)
+        reroll_bases[
+            appended_index
+        ] = base_index  # point to the base which this reroll descends from
+        reroll_bases[base_index].insert(0, appended_index)  # type: ignore
 
-        explosions += 1
-        new_dice.append_items(exploded_values)
-        if reroll:
-            new_dice.drop_indices(new_exploded_indices)
-        
-        # this is not very performant. TODO have the selector apply to only the new values
-        should_explode = [i for i in selector.apply(new_dice) if i not in has_exploded]
+        new_roll = single_roll(dice.get_dice_size())
+        new_rolls.append(new_roll)
+        appended_index += 1
 
-    new_dice.set_value(new_dice.total())
-    return new_dice
+    temp_dice.drop_indices(should_reroll)
+    temp_dice.append_items(new_rolls)
+    temp_dice.set_value(temp_dice.total())
+    return temp_dice
+
+
+# Set operator for dice.
+# Reroll matching dice, continuing to reroll new matches rolled this way up to `max_rerolls` times.
+# `max_rerolls` set to 1 means only the original matches are rerolled.
+# The original values are kept and added (exploded) unless `keep` is set to False.
+def dice_reroll(
+    dice: DiceValues,
+    selector: SetSelector,
+    max_rerolls: int = REROLL_CAP,
+    keep: bool = True,
+):
+    temp_dice = dice.copy()
+    rerolls = 0
+
+    # Perform repeated rerolls, appending all to the end of a temporary element collection.
+    # All rerolled dice are dropped in the temporary collection, preventing unintended repeats.
+    # Map new appended indices to their original so we can rearrange them in the final result.
+    # mapping:
+    # original index -> list of rerolled indices descending from that index
+    # reroll's index -> original index
+    # new rolled indices are pushed at the start of the list
+    reroll_bases: dict[int, list[int] | int] = {}
+    while rerolls < max_rerolls:
+        should_reroll = selector.apply(temp_dice)
+        if len(should_reroll) == 0:
+            break
+        temp_dice = _dice_reroll_append(temp_dice, should_reroll, reroll_bases)
+        rerolls += 1
+
+    result = dice.copy()
+
+    # Reconstruct the dice set, inserting new rolls at their correct positions
+    base_mapping = [
+        (base, children)
+        for base, children in reroll_bases.items()
+        if base < dice.get_all_count()
+        and isinstance(
+            children, list
+        )  # if either of these is true, the other should also be
+    ]
+    # Sort, allowing insert in result from back to front
+    base_mapping.sort(key=lambda x: x[0], reverse=True)
+    unmapped_items = temp_dice.get_all_items()
+
+    if not keep:  # Drop base items if needed
+        result.drop_indices([i for i, _ in base_mapping])
+
+    for (base, children) in base_mapping:
+        for j in range(len(children)):
+            should_drop = (j != 0) and (not keep)
+            roll_value = unmapped_items[children[j]]
+            result.insert_item(base + 1, roll_value, dropped=should_drop)
+
+    result.set_value(result.total())
+    return result

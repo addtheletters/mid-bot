@@ -498,7 +498,7 @@ def _explode_postfix_operator(node, x):
     if not isinstance(x.detail, DiceValues):
         raise SyntaxError("Invalid operand for explode (not a dice result)")
     dice: DiceValues = x.detail
-    node.detail = dice_explode(
+    node.detail = dice_reroll(
         dice, ConditionalSelector(lambda a: a >= dice.get_dice_size())
     )
 
@@ -507,15 +507,15 @@ def _explode_infix_operator(node, x, y):
     dice, setsel = assert_set_operands(x.detail, y.detail)
     if not isinstance(dice, DiceValues):
         raise SyntaxError("Invalid operand for explode (not a dice result)")
-    node.detail = dice_explode(dice, setsel)
+    node.detail = dice_reroll(dice, setsel)
 
 
 def _explode_once_postfix_operator(node, x):
     if not isinstance(x.detail, DiceValues):
         raise SyntaxError("Invalid operand for explode (not a dice result)")
     dice: DiceValues = x.detail
-    node.detail = dice_explode(
-        dice, ConditionalSelector(lambda a: a >= dice.get_dice_size()), max_explodes=1
+    node.detail = dice_reroll(
+        dice, ConditionalSelector(lambda a: a >= dice.get_dice_size()), max_rerolls=1
     )
 
 
@@ -523,21 +523,21 @@ def _explode_once_infix_operator(node, x, y):
     dice, setsel = assert_set_operands(x.detail, y.detail)
     if not isinstance(dice, DiceValues):
         raise SyntaxError("Invalid operand for explode (not a dice result)")
-    node.detail = dice_explode(dice, setsel, max_explodes=1)
+    node.detail = dice_reroll(dice, setsel, max_rerolls=1)
 
 
 def _reroll_once_operator(node, x, y):
     dice, setsel = assert_set_operands(x.detail, y.detail)
     if not isinstance(dice, DiceValues):
         raise SyntaxError("Invalid operand for reroll (not a dice result)")
-    node.detail = dice_explode(dice, setsel, max_explodes=1, reroll=True)
+    node.detail = dice_reroll(dice, setsel, max_rerolls=1, keep=False)
 
 
 def _reroll_recursive_operator(node, x, y):
     dice, setsel = assert_set_operands(x.detail, y.detail)
     if not isinstance(dice, DiceValues):
         raise SyntaxError("Invalid operand for reroll (not a dice result)")
-    node.detail = dice_explode(dice, setsel, max_explodes=EXPLOSION_CAP, reroll=True)
+    node.detail = dice_reroll(dice, setsel, keep=False)
 
 
 def _negate_operator(node, x):

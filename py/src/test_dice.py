@@ -197,7 +197,7 @@ class SetTest(unittest.TestCase):
         # simulated 4d6
         die_size = 6
         my_dice = dice_details.DiceValues(die_size, [1, 1, 3, 6])
-        exploded = dice_details.dice_explode(
+        exploded = dice_details.dice_reroll(
             my_dice, dice_details.ConditionalSelector(lambda x: x >= die_size)
         )
         self.assertGreater(
