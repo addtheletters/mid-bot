@@ -1,7 +1,6 @@
 import unittest
 
-import dice
-import dice_details
+import dice, dice_details
 
 
 class RollTest(unittest.TestCase):
@@ -36,6 +35,8 @@ class MathTest(RollTest):
         self.assertFirstRollEquals("5C2", 10)
         self.assertFirstRollEquals("5 C fact(2)", 10)
         self.assertFirstRollEquals("fact(5C2)", 3628800)
+        self.assertFirstRollEquals("12 P 2", 132)
+        self.assertFirstRollEquals("30 permute 5", 17100720)
 
     def test_comparison(self):
         self.assertFirstRollEquals("10 > 3", True)
@@ -44,6 +45,10 @@ class MathTest(RollTest):
         self.assertFirstRollEquals("10 <= 3", False)
         self.assertFirstRollEquals("10 ~= 3", True)
         self.assertFirstRollEquals("10 = 3", False)
+
+    def test_floor_division(self):
+        self.assertFirstRollEquals("10 // 3", 3)
+        self.assertFirstRollEquals("12 // 4", 3)
 
     # Test that semicolons separate an input into multiple rolls.
     def test_breaks(self):
@@ -135,14 +140,36 @@ class DiceTest(RollTest):
         self.assertFirstRollEquals("{2, 4, 6, 3}keven", 12)
         self.assertFirstRollEquals("{2, 4, 6, 3}podd", 12)
 
+    def test_explode_once(self):
+        dice.roll("10d3!")
+        dice.roll("10d3!o")
+        dice.roll("10d3!o=2")
+        self.assertFirstRollEquals("3d1!o", 6)
+        self.assertFirstRollEquals("3d1!o>1", 3)
+
+    def test_floor_ceil(self):
+        self.assertFirstRollEquals("floor(10/3)", 3)
+        self.assertFirstRollEquals("ceil(10/3)", 4)
+
+    def test_interpret_explode_once(self):
+        dice.roll("10d4!o")
+        dice.roll("6d8!o<4")
+
+    def test_interpret_reroll(self):
+        dice.roll("5d4r=4")
+        dice.roll("10d4kh2rr=3")
+
 
 class HelpExamplesTest(unittest.TestCase):
     def test_interpret_examples(self):
         dice.roll("4d6?=5")
         dice.roll("4d6kh3")
         dice.roll("repeat(3d6, 5)pl2")
+        dice.roll("8d6rl1")
+        dice.roll("2d6rr<3")
         dice.roll("10d4!")
         dice.roll("8d6!>4")
+        dice.roll("3d8!o=3")
         dice.roll("1d20+5 >= 15")
         dice.roll("agg(3d8, *)")
         dice.roll("agg(repeat(3d6+2, 4), +)")
@@ -191,7 +218,7 @@ class SetTest(unittest.TestCase):
         # simulated 4d6
         die_size = 6
         my_dice = dice_details.DiceValues(die_size, [1, 1, 3, 6])
-        exploded = dice_details.dice_explode(
+        exploded = dice_details.dice_reroll(
             my_dice, dice_details.ConditionalSelector(lambda x: x >= die_size)
         )
         self.assertGreater(

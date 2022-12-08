@@ -41,7 +41,9 @@ class PebbleExecutor(concurrent.futures.Executor):
 # swap that field for the brief when we register hybrid commands.
 def swap_hybrid_command_description(hybrid: commands.HybridCommand):
     if not hybrid.app_command or not hybrid.brief:
-        raise RuntimeError(f"Tried to swap missing description/brief on hybrid command {hybrid}")
+        raise RuntimeError(
+            f"Tried to swap missing description/brief on hybrid command {hybrid}"
+        )
     hybrid.app_command.description = hybrid.brief
 
 
@@ -114,36 +116,41 @@ async def shrug(ctx: commands.Context):
     description=f"""
 __**roll**__
 Rolls some dice and does some math.
-This handles a subset of standard dice notation (https://en.wikipedia.org/wiki/Dice_notation).
+See: (https://en.wikipedia.org/wiki/Dice_notation).
 Roughly in order of precedence:
 
 __Dice roll__ `d`
-    `<N>d<S>` to roll N dice of size S, evaluated by adding the results. This produces a collection. N omitted will roll 1 dice. 
-__Collective Comparison__ `?= ?> ?< ?>= ?<= ?~=`
-    Filter for and count how many items from a collection succeed a comparison.
+    `<N>d<S>` to roll N dice of size S. N omitted will roll 1 dice. 
+__Counting__ `?`
+    Filter and count how many items succeed a comparison.
     `{get_summon_prefix()}roll 4d6?=5` for how many times 5 is rolled from 4 six-sided dice. 
-__Keep/Drop__ `kh` (keep high), `kl` (keep low), `ph` (drop high), `pl` (drop low)
+__Keep/Drop__ `k`, `p`
     `<collection>kh<N>` keeps the N highest values from the collection.
     `{get_summon_prefix()}roll 4d6kh3` or `{get_summon_prefix()}roll repeat(3d6, 5)pl2`
-__Explode__ `!`, also `!= !> !< !>= !<= !~=`
-    `<diceroll>!` Highest-possible rolls explode (triggers another roll).
-    With comparison, will explode on rolls that succeed.
+__Reroll__ `r` (reroll once), `rr` (reroll recursive)
+    Reroll, replacing the original with the new roll.
+    `{get_summon_prefix()}roll 8d6rl1` to reroll the lowest d6 out of the 8.
+    `{get_summon_prefix()}roll 2d6rr<3` to keep rerolling any d6 that is less than 3.
+__Explode__ `!` (explode), `!o` (explode once)
+    `<diceroll>!` Highest-possible rolls trigger another roll. Can also explode on comparison.
     `{get_summon_prefix()}roll 10d4!`, `{get_summon_prefix()}roll 8d6!>4`
-__Combinatorics__ `choose` or `C`
-    `<n> C <k>` or `<n> choose <k>` to count choices.
-__Arithmetic__ `+ - * / % ^`
-    Use as you'd expect. `%` is remainder. `^` is power, not xor.
-__Value Comparison__ `= > < >= <= ~=`
-    Evaluates to 1 if success, 0 if not. `{get_summon_prefix()}roll 1d20+5 >= 15`
-__Functions__ `agg() fact() repeat() sqrt()`
+    `{get_summon_prefix()}roll 3d8!o=3`
+__Combinatorics__  `permute` or `P`, `choose` or `C`
+    `<n> P <k>` or `<n> permute <k>`.
+    `<n> C <k>` or `<n> choose <k>`.
+__Arithmetic__ `+ - * / // % ^`
+    `//` is integer division. `%` is remainder. `^` is power, not xor.
+__Comparison__ `= > < >= <= ~=`
+    `{get_summon_prefix()}roll 1d20+5 >= 15`
+__Functions__ `agg() fact() repeat() sqrt() floor() ceil()`
     `agg(<collection>, <operator>)` to aggregate the collection using the operator.
         Valid operators are: `+ - * / % ^`. Dice rolls are already aggregated using `+`.
         Try `{get_summon_prefix()}roll agg(3d8, *)` or `{get_summon_prefix()}roll agg(repeat(3d6+2, 4), +)`
     `fact(<N>)` is N factorial (`!` is reserved for exploding dice).
     `repeat(<expression>, <n>)` repeats the evaluation, producing a n-size collection.
-    `sqrt(<x>)` square root of x.
 __Parentheses__ `( )` for associativity and order of operations.
-__Semicolons__ `;` for several rolls in one message.
+__Braces__ `{{ }}` around comma-separated items for literal collections.
+__Semicolons__ `;` for many rolls at once.
     `{get_summon_prefix()}roll 1d20+5; 2d6+5`
 """,
 )

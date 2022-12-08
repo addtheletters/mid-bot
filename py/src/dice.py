@@ -3,12 +3,23 @@
 
 import re
 import typing
-from math import factorial, sqrt
+from math import ceil, factorial, floor, sqrt, perm
 
 from dice_details import *
 from utils import codeblock, escape
 
-KEYWORDS = ["C", "choose", "repeat", "sqrt", "fact", "agg"]
+KEYWORDS = [
+    "P",
+    "permute",
+    "C",
+    "choose",
+    "repeat",
+    "sqrt",
+    "fact",
+    "agg",
+    "floor",
+    "ceil",
+]
 KEYWORD_PATTERN = "|".join(KEYWORDS)
 # fmt: off
 TOKEN_SPEC = [
@@ -19,7 +30,7 @@ TOKEN_SPEC = [
     ("SETOP",    r"~?\?|[kp]|[!x]o?|rr?"),      # Set operators
     ("SETSEL",   r"[hl]|even|odd"),             # Set selectors, not including comparisons
     ("COMP",     r"[><~]=|[><=]"),              # Comparisons, also usable as set selectors
-    ("OP",       r"[+\-*×/÷%^(){}]"),           # Generic operators
+    ("OP",       r"[+\-*×÷%^(){}]|//?"),        # Generic operators
     ("SEP",      r"[,]"),                       # Separators like commas
     ("END",      r"[;\n]"),                     # Line end / break characters
     ("SKIP",     r"[ \t]+"),                    # Skip over spaces and tabs
@@ -43,6 +54,7 @@ ARITHMETICS = {
     "-": lambda x, y: x - y,
     "*": lambda x, y: x * y,
     "/": lambda x, y: x / y,
+    "//": lambda x, y: x // y,
     "%": lambda x, y: x % y,
     "^": lambda x, y: x**y,
 }
@@ -153,7 +165,9 @@ class Evaluator:
         # to their result value and shows the results of dicerolls.
         # If `top_level`, sets of expressions are allowed to join with newlines for
         # better readability.
-        def describe(self, evaluated=False, top_level=False) -> str:
+        def describe(
+            self, evaluated=False, top_level=False, absorbed_dice=False
+        ) -> str:
             if self.second == None and self.first == None:
                 if self._kind in ARITHMETICS.keys():
                     # display lone symbol if used as operand such as in agg()
@@ -164,16 +178,25 @@ class Evaluator:
                     print(self._kind)
                 return str(self)
 
+            absorb_child = False
             if evaluated:
                 if not self.contains_diceroll():
                     if self.get_value() == None:
                         return escape(str(self))
                     return f"{self.get_value()}"
-                if self.detail:
+                if self.detail and not self.is_diceroll() and not self.is_selector():
                     return ExprResult.description(self.detail, evaluated, top_level)
+                if self.is_set_operation() and self.first and self.first.is_diceroll():
+                    absorb_child = True
 
-            describe_first = self.first.describe(evaluated) if self.first else ""
-            describe_second = self.second.describe(evaluated) if self.second else ""
+            describe_first = (
+                self.first.describe(evaluated=evaluated, absorbed_dice=absorb_child)
+                if self.first
+                else ""
+            )
+            describe_second = (
+                self.second.describe(evaluated=evaluated) if self.second else ""
+            )
             spacer = " " if self.should_spaces() else ""
 
             if self._function_like:
@@ -191,7 +214,16 @@ class Evaluator:
             if self.second == None and not self.should_postfix():
                 left = ""
                 right = describe_first
-            return f"{left}{spacer}{op}{spacer}{right}"
+
+            main_description = f"{left}{spacer}{op}{spacer}{right}"
+
+            if evaluated and not absorbed_dice and self.is_diceroll():
+                dice_description = ExprResult.description(
+                    self.detail, evaluated, top_level
+                )
+                return f"{main_description} {dice_description}"
+
+            return main_description
 
         def __repr__(self):
             if self._kind == "NUMBER":
@@ -209,10 +241,27 @@ class Evaluator:
             return str(final_value)
 
         def is_diceroll(self):
-            return self._kind == "d" or self.is_set_operation()
+            return self._kind == "d" or (
+                self.detail and isinstance(self.detail, DiceValues)
+            )
+
+        def is_collection(self):
+            return self.is_diceroll() or self.is_set_operation() or self.is_selector()
 
         def is_set_operation(self):
-            return self._kind in ("k", "p", "?", "~?", "!", "{", "repeat")
+            return self._kind in (
+                "k",
+                "p",
+                "?",
+                "~?",
+                "{",
+                "repeat",
+                "agg",
+                "!",
+                "!o",
+                "r",
+                "rr",
+            )
 
         def is_selector(self):
             return self._kind in (
@@ -228,9 +277,9 @@ class Evaluator:
                 "odd",
             )
 
-        # Is this node dice, or does any node in this subtree have dice?
+        # Is this node dice, or does could a node in this subtree have dice?
         def contains_diceroll(self):
-            if self.is_diceroll():
+            if self.is_collection():
                 return True
             if self.first != None:
                 has_dice = self.first.contains_diceroll()
@@ -456,24 +505,22 @@ def assert_set_operands(setr, setsel):
 
 def _set_keep_operator(node, x, y):
     setr, setsel = assert_set_operands(x.detail, y.detail)
-    node.detail = set_op_keep(setr.copy(), setsel.apply(setr))
+    node.detail = set_op_keep(setr, setsel.apply(setr))
 
 
 def _set_drop_operator(node, x, y):
     setr, setsel = assert_set_operands(x.detail, y.detail)
-    node.detail = set_op_keep(setr.copy(), setsel.apply(setr), invert=True)
+    node.detail = set_op_keep(setr, setsel.apply(setr), invert=True)
 
 
 def _set_count_pass_operator(node, x, y):
     setr, setsel = assert_set_operands(x.detail, y.detail)
-    node.detail = set_op_count(SuccessValues(setr.elements), setsel.apply(setr))
+    node.detail = set_op_count(setr, setsel.apply(setr))
 
 
 def _set_count_fail_operator(node, x, y):
     setr, setsel = assert_set_operands(x.detail, y.detail)
-    node.detail = set_op_count(
-        SuccessValues(setr.elements), setsel.apply(setr), invert=True
-    )
+    node.detail = set_op_count(setr, setsel.apply(setr), invert=True)
 
 
 def _select_low_operator(node, x):
@@ -500,7 +547,7 @@ def _explode_postfix_operator(node, x):
     if not isinstance(x.detail, DiceValues):
         raise SyntaxError("Invalid operand for explode (not a dice result)")
     dice: DiceValues = x.detail
-    node.detail = dice_explode(
+    node.detail = dice_reroll(
         dice, ConditionalSelector(lambda a: a >= dice.get_dice_size())
     )
 
@@ -509,7 +556,37 @@ def _explode_infix_operator(node, x, y):
     dice, setsel = assert_set_operands(x.detail, y.detail)
     if not isinstance(dice, DiceValues):
         raise SyntaxError("Invalid operand for explode (not a dice result)")
-    node.detail = dice_explode(dice, setsel)
+    node.detail = dice_reroll(dice, setsel)
+
+
+def _explode_once_postfix_operator(node, x):
+    if not isinstance(x.detail, DiceValues):
+        raise SyntaxError("Invalid operand for explode (not a dice result)")
+    dice: DiceValues = x.detail
+    node.detail = dice_reroll(
+        dice, ConditionalSelector(lambda a: a >= dice.get_dice_size()), max_rerolls=1
+    )
+
+
+def _explode_once_infix_operator(node, x, y):
+    dice, setsel = assert_set_operands(x.detail, y.detail)
+    if not isinstance(dice, DiceValues):
+        raise SyntaxError("Invalid operand for explode (not a dice result)")
+    node.detail = dice_reroll(dice, setsel, max_rerolls=1)
+
+
+def _reroll_once_operator(node, x, y):
+    dice, setsel = assert_set_operands(x.detail, y.detail)
+    if not isinstance(dice, DiceValues):
+        raise SyntaxError("Invalid operand for reroll (not a dice result)")
+    node.detail = dice_reroll(dice, setsel, max_rerolls=1, keep=False)
+
+
+def _reroll_recursive_operator(node, x, y):
+    dice, setsel = assert_set_operands(x.detail, y.detail)
+    if not isinstance(dice, DiceValues):
+        raise SyntaxError("Invalid operand for reroll (not a dice result)")
+    node.detail = dice_reroll(dice, setsel, keep=False)
 
 
 def _negate_operator(node, x):
@@ -520,9 +597,23 @@ def _factorial_operator(node, x):
     node._value = factorial(x.get_value())
 
 
+def _ceil_operator(node, x):
+    node._value = ceil(x.get_value())
+
+
+def _floor_operator(node, x):
+    node._value = floor(x.get_value())
+
+
+def _permutation_operator(node, x, y):
+    n = force_integral(x.get_value(), "permutation operand (n)")
+    k = force_integral(y.get_value(), "permutation operand (k)")
+    node._value = perm(n, k)
+
+
 def _choose_operator(node, x, y):
-    n = force_integral(x.get_value(), "choice operand")
-    k = force_integral(y.get_value(), "choice operand")
+    n = force_integral(x.get_value(), "choice operand (n)")
+    k = force_integral(y.get_value(), "choice operand (k)")
     if n < 0 or k < 0:
         raise ValueError("choose operator must have positive operands")
     if k > n:
@@ -679,36 +770,34 @@ Evaluator.register_symbol(")")
 Evaluator.register_symbol(",")
 Evaluator.register_symbol("{").as_prefix = _left_brace_nud  # type: ignore
 Evaluator.register_symbol("}")
+
 Evaluator.register_function_double("repeat", _repeat_function)
-Evaluator.register_function_single("sqrt", _sqrt_operator)
-Evaluator.register_function_single("fact", _factorial_operator)
 Evaluator.register_function_double("agg", _aggregate_function)
 
+Evaluator.register_function_single("ceil", _ceil_operator)
+Evaluator.register_function_single("floor", _floor_operator)
+
+Evaluator.register_function_single("fact", _factorial_operator)
+Evaluator.register_function_single("sqrt", _sqrt_operator)
+
 # Operators given reflex nud to allow their use as agg operands
-Evaluator.register_infix(
-    "+", build_arithmetic_operator("+"), 10
-).as_prefix = _reflex_nud  # type: ignore
+Evaluator.register_infix("+", build_arithmetic_operator("+"), 10).as_prefix = _reflex_nud  # type: ignore
 Evaluator.register_infix(
     "-", build_arithmetic_operator("-"), 10
 ).as_prefix = build_dash_nud(  # dash nud special case because of negation prefix
     100
 )  # type: ignore
-Evaluator.register_infix(
-    "*", build_arithmetic_operator("*"), 20
-).as_prefix = _reflex_nud  # type: ignore
+Evaluator.register_infix("*", build_arithmetic_operator("*"), 20).as_prefix = _reflex_nud  # type: ignore
 Evaluator.register_infix("×", build_arithmetic_operator("*"), 20)
-Evaluator.register_infix(
-    "/", build_arithmetic_operator("/"), 20
-).as_prefix = _reflex_nud  # type: ignore
+Evaluator.register_infix("/", build_arithmetic_operator("/"), 20).as_prefix = _reflex_nud  # type: ignore
+Evaluator.register_infix("//", build_arithmetic_operator("//"), 20).as_prefix = _reflex_nud  # type: ignore
 Evaluator.register_infix("÷", build_arithmetic_operator("/"), 20)
-Evaluator.register_infix(
-    "%", build_arithmetic_operator("%"), 20
-).as_prefix = _reflex_nud  # type: ignore
+Evaluator.register_infix("%", build_arithmetic_operator("%"), 20).as_prefix = _reflex_nud  # type: ignore
+Evaluator.register_infix("^", build_arithmetic_operator("^"), 110, right_assoc=True).as_prefix = _reflex_nud  # type: ignore
 
-Evaluator.register_infix(
-    "^", build_arithmetic_operator("^"), 110, right_assoc=True
-).as_prefix = _reflex_nud  # type: ignore
-
+# Combinatorics
+Evaluator.register_infix("P", _permutation_operator, 130, spaces=True)
+Evaluator.register_infix("permute", _permutation_operator, 130, spaces=True)
 Evaluator.register_infix("C", _choose_operator, 130, spaces=True)
 Evaluator.register_infix("choose", _choose_operator, 130, spaces=True)
 
@@ -726,6 +815,17 @@ Evaluator.register_hybrid_infix_postfix(
 ).should_postfix = (
     lambda self: self._kind == "!" and self.second is None
 )
+Evaluator.register_hybrid_infix_postfix(
+    "!o",
+    _explode_once_infix_operator,
+    _explode_once_postfix_operator,
+    _explode_check_right_valid,
+    180,
+).should_postfix = (
+    lambda self: self._kind == "!o" and self.second is None
+)
+Evaluator.register_infix("r", _reroll_once_operator, 180)
+Evaluator.register_infix("rr", _reroll_recursive_operator, 180)
 
 # Set Selectors
 Evaluator.register_prefix("h", _select_high_operator, 190)
