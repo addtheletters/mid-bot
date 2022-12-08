@@ -19,7 +19,7 @@ TOKEN_SPEC = [
     ("SETOP",    r"~?\?|[kp]|[!x]o?|rr?"),      # Set operators
     ("SETSEL",   r"[hl]|even|odd"),             # Set selectors, not including comparisons
     ("COMP",     r"[><~]=|[><=]"),              # Comparisons, also usable as set selectors
-    ("OP",       r"[+\-*×/÷%^(){}]"),           # Generic operators
+    ("OP",       r"[+\-*×÷%^(){}]|//?"),        # Generic operators
     ("SEP",      r"[,]"),                       # Separators like commas
     ("END",      r"[;\n]"),                     # Line end / break characters
     ("SKIP",     r"[ \t]+"),                    # Skip over spaces and tabs
@@ -43,6 +43,7 @@ ARITHMETICS = {
     "-": lambda x, y: x - y,
     "*": lambda x, y: x * y,
     "/": lambda x, y: x / y,
+    "//": lambda x, y: x // y,
     "%": lambda x, y: x % y,
     "^": lambda x, y: x**y,
 }
@@ -763,29 +764,19 @@ Evaluator.register_function_single("fact", _factorial_operator)
 Evaluator.register_function_single("sqrt", _sqrt_operator)
 
 # Operators given reflex nud to allow their use as agg operands
-Evaluator.register_infix(
-    "+", build_arithmetic_operator("+"), 10
-).as_prefix = _reflex_nud  # type: ignore
+Evaluator.register_infix("+", build_arithmetic_operator("+"), 10).as_prefix = _reflex_nud  # type: ignore
 Evaluator.register_infix(
     "-", build_arithmetic_operator("-"), 10
 ).as_prefix = build_dash_nud(  # dash nud special case because of negation prefix
     100
 )  # type: ignore
-Evaluator.register_infix(
-    "*", build_arithmetic_operator("*"), 20
-).as_prefix = _reflex_nud  # type: ignore
+Evaluator.register_infix("*", build_arithmetic_operator("*"), 20).as_prefix = _reflex_nud  # type: ignore
 Evaluator.register_infix("×", build_arithmetic_operator("*"), 20)
-Evaluator.register_infix(
-    "/", build_arithmetic_operator("/"), 20
-).as_prefix = _reflex_nud  # type: ignore
+Evaluator.register_infix("/", build_arithmetic_operator("/"), 20).as_prefix = _reflex_nud  # type: ignore
+Evaluator.register_infix("//", build_arithmetic_operator("//"), 20).as_prefix = _reflex_nud  # type: ignore
 Evaluator.register_infix("÷", build_arithmetic_operator("/"), 20)
-Evaluator.register_infix(
-    "%", build_arithmetic_operator("%"), 20
-).as_prefix = _reflex_nud  # type: ignore
-
-Evaluator.register_infix(
-    "^", build_arithmetic_operator("^"), 110, right_assoc=True
-).as_prefix = _reflex_nud  # type: ignore
+Evaluator.register_infix("%", build_arithmetic_operator("%"), 20).as_prefix = _reflex_nud  # type: ignore
+Evaluator.register_infix("^", build_arithmetic_operator("^"), 110, right_assoc=True).as_prefix = _reflex_nud  # type: ignore
 
 Evaluator.register_infix("C", _choose_operator, 130, spaces=True)
 Evaluator.register_infix("choose", _choose_operator, 130, spaces=True)

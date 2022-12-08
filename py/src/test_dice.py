@@ -44,6 +44,10 @@ class MathTest(RollTest):
         self.assertFirstRollEquals("10 ~= 3", True)
         self.assertFirstRollEquals("10 = 3", False)
 
+    def test_floor_division(self):
+        self.assertFirstRollEquals("10 // 3", 3)
+        self.assertFirstRollEquals("12 // 4", 3)
+
     # Test that semicolons separate an input into multiple rolls.
     def test_breaks(self):
         results = dice.roll("1d20+5; 2d6+5")
@@ -144,7 +148,7 @@ class DiceTest(RollTest):
     def test_floor_ceil(self):
         self.assertFirstRollEquals("floor(10/3)", 3)
         self.assertFirstRollEquals("ceil(10/3)", 4)
-    
+
     def test_interpret_explode_once(self):
         dice.roll("10d4!o")
         dice.roll("6d8!o<4")
@@ -152,7 +156,6 @@ class DiceTest(RollTest):
     def test_interpret_reroll(self):
         dice.roll("5d4r=4")
         dice.roll("10d4kh2rr=3")
-    
 
 
 class HelpExamplesTest(unittest.TestCase):
