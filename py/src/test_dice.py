@@ -141,6 +141,19 @@ class DiceTest(RollTest):
         self.assertFirstRollEquals("3d1!o", 6)
         self.assertFirstRollEquals("3d1!o>1", 3)
 
+    def test_floor_ceil(self):
+        self.assertFirstRollEquals("floor(10/3)", 3)
+        self.assertFirstRollEquals("ceil(10/3)", 4)
+    
+    def test_interpret_explode_once(self):
+        dice.roll("10d4!o")
+        dice.roll("6d8!o<4")
+
+    def test_interpret_reroll(self):
+        dice.roll("5d4r=4")
+        dice.roll("10d4kh2rr=3")
+    
+
 
 class HelpExamplesTest(unittest.TestCase):
     def test_interpret_examples(self):

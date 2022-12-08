@@ -3,12 +3,12 @@
 
 import re
 import typing
-from math import factorial, sqrt
+from math import ceil, factorial, floor, sqrt
 
 from dice_details import *
 from utils import codeblock, escape
 
-KEYWORDS = ["C", "choose", "repeat", "sqrt", "fact", "agg"]
+KEYWORDS = ["C", "choose", "repeat", "sqrt", "fact", "agg", "floor", "ceil"]
 KEYWORD_PATTERN = "|".join(KEYWORDS)
 # fmt: off
 TOKEN_SPEC = [
@@ -237,7 +237,19 @@ class Evaluator:
             return self.is_diceroll() or self.is_set_operation() or self.is_selector()
 
         def is_set_operation(self):
-            return self._kind in ("k", "p", "?", "~?", "!", "{", "repeat", "agg")
+            return self._kind in (
+                "k",
+                "p",
+                "?",
+                "~?",
+                "{",
+                "repeat",
+                "agg",
+                "!",
+                "!o",
+                "r",
+                "rr",
+            )
 
         def is_selector(self):
             return self._kind in (
@@ -573,6 +585,14 @@ def _factorial_operator(node, x):
     node._value = factorial(x.get_value())
 
 
+def _ceil_operator(node, x):
+    node._value = ceil(x.get_value())
+
+
+def _floor_operator(node, x):
+    node._value = floor(x.get_value())
+
+
 def _choose_operator(node, x, y):
     n = force_integral(x.get_value(), "choice operand")
     k = force_integral(y.get_value(), "choice operand")
@@ -732,10 +752,15 @@ Evaluator.register_symbol(")")
 Evaluator.register_symbol(",")
 Evaluator.register_symbol("{").as_prefix = _left_brace_nud  # type: ignore
 Evaluator.register_symbol("}")
+
 Evaluator.register_function_double("repeat", _repeat_function)
-Evaluator.register_function_single("sqrt", _sqrt_operator)
-Evaluator.register_function_single("fact", _factorial_operator)
 Evaluator.register_function_double("agg", _aggregate_function)
+
+Evaluator.register_function_single("ceil", _ceil_operator)
+Evaluator.register_function_single("floor", _floor_operator)
+
+Evaluator.register_function_single("fact", _factorial_operator)
+Evaluator.register_function_single("sqrt", _sqrt_operator)
 
 # Operators given reflex nud to allow their use as agg operands
 Evaluator.register_infix(
