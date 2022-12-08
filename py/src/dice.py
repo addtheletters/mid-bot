@@ -3,12 +3,23 @@
 
 import re
 import typing
-from math import ceil, factorial, floor, sqrt
+from math import ceil, factorial, floor, sqrt, perm
 
 from dice_details import *
 from utils import codeblock, escape
 
-KEYWORDS = ["C", "choose", "repeat", "sqrt", "fact", "agg", "floor", "ceil"]
+KEYWORDS = [
+    "P",
+    "permute",
+    "C",
+    "choose",
+    "repeat",
+    "sqrt",
+    "fact",
+    "agg",
+    "floor",
+    "ceil",
+]
 KEYWORD_PATTERN = "|".join(KEYWORDS)
 # fmt: off
 TOKEN_SPEC = [
@@ -594,9 +605,15 @@ def _floor_operator(node, x):
     node._value = floor(x.get_value())
 
 
+def _permutation_operator(node, x, y):
+    n = force_integral(x.get_value(), "permutation operand (n)")
+    k = force_integral(y.get_value(), "permutation operand (k)")
+    node._value = perm(n, k)
+
+
 def _choose_operator(node, x, y):
-    n = force_integral(x.get_value(), "choice operand")
-    k = force_integral(y.get_value(), "choice operand")
+    n = force_integral(x.get_value(), "choice operand (n)")
+    k = force_integral(y.get_value(), "choice operand (k)")
     if n < 0 or k < 0:
         raise ValueError("choose operator must have positive operands")
     if k > n:
@@ -778,6 +795,9 @@ Evaluator.register_infix("÷", build_arithmetic_operator("/"), 20)
 Evaluator.register_infix("%", build_arithmetic_operator("%"), 20).as_prefix = _reflex_nud  # type: ignore
 Evaluator.register_infix("^", build_arithmetic_operator("^"), 110, right_assoc=True).as_prefix = _reflex_nud  # type: ignore
 
+# Combinatorics
+Evaluator.register_infix("P", _permutation_operator, 130, spaces=True)
+Evaluator.register_infix("permute", _permutation_operator, 130, spaces=True)
 Evaluator.register_infix("C", _choose_operator, 130, spaces=True)
 Evaluator.register_infix("choose", _choose_operator, 130, spaces=True)
 

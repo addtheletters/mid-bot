@@ -35,6 +35,8 @@ class MathTest(RollTest):
         self.assertFirstRollEquals("5C2", 10)
         self.assertFirstRollEquals("5 C fact(2)", 10)
         self.assertFirstRollEquals("fact(5C2)", 3628800)
+        self.assertFirstRollEquals("12 P 2", 132)
+        self.assertFirstRollEquals("30 permute 5", 17100720)
 
     def test_comparison(self):
         self.assertFirstRollEquals("10 > 3", True)
@@ -163,8 +165,11 @@ class HelpExamplesTest(unittest.TestCase):
         dice.roll("4d6?=5")
         dice.roll("4d6kh3")
         dice.roll("repeat(3d6, 5)pl2")
+        dice.roll("8d6rl1")
+        dice.roll("2d6rr<3")
         dice.roll("10d4!")
         dice.roll("8d6!>4")
+        dice.roll("3d8!o=3")
         dice.roll("1d20+5 >= 15")
         dice.roll("agg(3d8, *)")
         dice.roll("agg(repeat(3d6+2, 4), +)")
