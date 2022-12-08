@@ -216,6 +216,8 @@ class DiceValues(SetResult):
 
     # Override to wrap and use `+` to join.
     def get_description(self):
+        if self.get_all_count() == 1:
+            return "(" + super().get_description() + ")"
         return (
             "("
             + super().get_description(joiner="+")

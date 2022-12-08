@@ -153,7 +153,9 @@ class Evaluator:
         # to their result value and shows the results of dicerolls.
         # If `top_level`, sets of expressions are allowed to join with newlines for
         # better readability.
-        def describe(self, evaluated=False, top_level=False) -> str:
+        def describe(
+            self, evaluated=False, top_level=False, absorbed_dice=False
+        ) -> str:
             if self.second == None and self.first == None:
                 if self._kind in ARITHMETICS.keys():
                     # display lone symbol if used as operand such as in agg()
@@ -164,16 +166,25 @@ class Evaluator:
                     print(self._kind)
                 return str(self)
 
+            absorb_child = False
             if evaluated:
                 if not self.contains_diceroll():
                     if self.get_value() == None:
                         return escape(str(self))
                     return f"{self.get_value()}"
-                if self.detail:
+                if self.detail and not self.is_diceroll() and not self.is_selector():
                     return ExprResult.description(self.detail, evaluated, top_level)
+                if self.is_set_operation() and self.first and self.first.is_diceroll():
+                    absorb_child = True
 
-            describe_first = self.first.describe(evaluated) if self.first else ""
-            describe_second = self.second.describe(evaluated) if self.second else ""
+            describe_first = (
+                self.first.describe(evaluated=evaluated, absorbed_dice=absorb_child)
+                if self.first
+                else ""
+            )
+            describe_second = (
+                self.second.describe(evaluated=evaluated) if self.second else ""
+            )
             spacer = " " if self.should_spaces() else ""
 
             if self._function_like:
@@ -191,7 +202,16 @@ class Evaluator:
             if self.second == None and not self.should_postfix():
                 left = ""
                 right = describe_first
-            return f"{left}{spacer}{op}{spacer}{right}"
+
+            main_description = f"{left}{spacer}{op}{spacer}{right}"
+
+            if evaluated and not absorbed_dice and self.is_diceroll():
+                dice_description = ExprResult.description(
+                    self.detail, evaluated, top_level
+                )
+                return f"{main_description} {dice_description}"
+
+            return main_description
 
         def __repr__(self):
             if self._kind == "NUMBER":
@@ -209,10 +229,15 @@ class Evaluator:
             return str(final_value)
 
         def is_diceroll(self):
-            return self._kind == "d" or self.is_set_operation()
+            return self._kind == "d" or (
+                self.detail and isinstance(self.detail, DiceValues)
+            )
+
+        def is_collection(self):
+            return self.is_diceroll() or self.is_set_operation() or self.is_selector()
 
         def is_set_operation(self):
-            return self._kind in ("k", "p", "?", "~?", "!", "{", "repeat")
+            return self._kind in ("k", "p", "?", "~?", "!", "{", "repeat", "agg")
 
         def is_selector(self):
             return self._kind in (
@@ -228,9 +253,9 @@ class Evaluator:
                 "odd",
             )
 
-        # Is this node dice, or does any node in this subtree have dice?
+        # Is this node dice, or does could a node in this subtree have dice?
         def contains_diceroll(self):
-            if self.is_diceroll():
+            if self.is_collection():
                 return True
             if self.first != None:
                 has_dice = self.first.contains_diceroll()
