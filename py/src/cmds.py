@@ -120,7 +120,8 @@ See: (https://en.wikipedia.org/wiki/Dice_notation).
 Roughly in order of precedence:
 
 __Dice roll__ `d`
-    `<N>d<S>` to roll N dice of size S. N omitted will roll 1 dice. 
+    `<N>d<S>` to roll N dice of size S. N omitted will roll 1 dice.
+    `F` for FATE/Fudge. `c` for coin: heads is 1, tails is 0.
 __Counting__ `?`
     Filter and count how many items succeed a comparison.
     `{get_summon_prefix()}roll 4d6?=5` for how many times 5 is rolled from 4 six-sided dice. 

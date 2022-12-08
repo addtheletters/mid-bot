@@ -159,6 +159,10 @@ class DiceTest(RollTest):
         dice.roll("5d4r=4")
         dice.roll("10d4kh2rr=3")
 
+    def test_interpret_special(self):
+        dice.roll("20dc")
+        dice.roll("10dF")
+
 
 class HelpExamplesTest(unittest.TestCase):
     def test_interpret_examples(self):

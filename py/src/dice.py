@@ -75,6 +75,8 @@ def symbolize(symbol_table, intext: str):
                 value = float(value)
             else:
                 value = int(value)
+        if kind == "DIETYPE":
+            value = SpecialDie(value)
         # pass OP, END
         elif kind == "SKIP":
             continue
@@ -92,7 +94,7 @@ def symbolize(symbol_table, intext: str):
 
         # construct the symbol instance and populate its value if needed
         token = symbol()
-        if kind == "NUMBER":
+        if kind == "NUMBER" or kind == "DIETYPE":
             token._value = value
         current_roll.append(token)
 
@@ -159,6 +161,9 @@ class Evaluator:
         def should_spaces(self) -> bool:
             return False
 
+        def contains_raw_value(self) -> bool:
+            return self._kind == "NUMBER" or self._kind == "DIETYPE"
+
         # Recursively describe this expression.
         # This should resemble the original input.
         # If `evaluated`, the description reduces nodes lacking dice operations
@@ -174,7 +179,7 @@ class Evaluator:
                     return f"{self._kind}"
                 if self.detail:
                     return ExprResult.description(self.detail, evaluated, top_level)
-                if self._kind != "NUMBER":
+                if not self.contains_raw_value():
                     print(self._kind)
                 return str(self)
 
@@ -226,8 +231,8 @@ class Evaluator:
             return main_description
 
         def __repr__(self):
-            if self._kind == "NUMBER":
-                return f"{self._value}"
+            if self.contains_raw_value():
+                return str(self._value)
             out = [self._kind, self.first, self.second]
             out = map(str, filter(None, out))  # type: ignore
             return "<" + " ".join(out) + ">"
@@ -236,9 +241,9 @@ class Evaluator:
             if self.detail != None:
                 return str(self.detail)
             final_value = self.get_value()
-            if final_value == None:
-                return str(self)
-            return str(final_value)
+            if final_value:
+                return str(final_value)
+            return str(self)
 
         def is_diceroll(self):
             return self._kind == "d" or (
@@ -770,17 +775,17 @@ Evaluator.register_symbol(")")
 Evaluator.register_symbol(",")
 Evaluator.register_symbol("{").as_prefix = _left_brace_nud  # type: ignore
 Evaluator.register_symbol("}")
+Evaluator.register_symbol("DIETYPE").as_prefix = _reflex_nud  # type: ignore
 
+# Function-like operators
 Evaluator.register_function_double("repeat", _repeat_function)
 Evaluator.register_function_double("agg", _aggregate_function)
-
 Evaluator.register_function_single("ceil", _ceil_operator)
 Evaluator.register_function_single("floor", _floor_operator)
-
 Evaluator.register_function_single("fact", _factorial_operator)
 Evaluator.register_function_single("sqrt", _sqrt_operator)
 
-# Operators given reflex nud to allow their use as agg operands
+# Arithmetic operators given reflex nud to allow their use as agg operands
 Evaluator.register_infix("+", build_arithmetic_operator("+"), 10).as_prefix = _reflex_nud  # type: ignore
 Evaluator.register_infix(
     "-", build_arithmetic_operator("-"), 10
