@@ -159,6 +159,15 @@ class DiceTest(RollTest):
         dice.roll("5d4r=4")
         dice.roll("10d4kh2rr=3")
 
+    def test_interpret_special(self):
+        dice.roll("20dc")
+        dice.roll("10dF")
+    
+    def test_interpret_label(self):
+        dice.roll("2d6 [slashing] + 1d4 [bonus damage]")
+        dice.roll("repeat(4d6kh3, 6) # roll for stats!")
+        dice.roll("(10d3+2)[fire] - 3d10[ice] # comment")
+
 
 class HelpExamplesTest(unittest.TestCase):
     def test_interpret_examples(self):

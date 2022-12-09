@@ -120,34 +120,37 @@ See: (https://en.wikipedia.org/wiki/Dice_notation).
 Roughly in order of precedence:
 
 __Dice roll__ `d`
-    `<N>d<S>` to roll N dice of size S. N omitted will roll 1 dice. 
+    `<N>d<S>` to roll N dice of size S. N omitted will roll 1 dice.
+    `F` for FATE/Fudge. `c` for coin: heads is 1, tails is 0.
 __Counting__ `?`
-    Filter and count how many items succeed a comparison.
+    Filter and count how many items succeed.
     `{get_summon_prefix()}roll 4d6?=5` for how many times 5 is rolled from 4 six-sided dice. 
 __Keep/Drop__ `k`, `p`
-    `<collection>kh<N>` keeps the N highest values from the collection.
+    `<collection>kh<N>` keeps the N highest values.
     `{get_summon_prefix()}roll 4d6kh3` or `{get_summon_prefix()}roll repeat(3d6, 5)pl2`
 __Reroll__ `r` (reroll once), `rr` (reroll recursive)
-    Reroll, replacing the original with the new roll.
+    Reroll, replacing the original with the new.
     `{get_summon_prefix()}roll 8d6rl1` to reroll the lowest d6 out of the 8.
     `{get_summon_prefix()}roll 2d6rr<3` to keep rerolling any d6 that is less than 3.
 __Explode__ `!` (explode), `!o` (explode once)
-    `<diceroll>!` Highest-possible rolls trigger another roll. Can also explode on comparison.
+    `<diceroll>!` Max rolls trigger another roll. Can also explode on comparison.
     `{get_summon_prefix()}roll 10d4!`, `{get_summon_prefix()}roll 8d6!>4`
     `{get_summon_prefix()}roll 3d8!o=3`
 __Combinatorics__  `permute` or `P`, `choose` or `C`
     `<n> P <k>` or `<n> permute <k>`.
     `<n> C <k>` or `<n> choose <k>`.
+__Label__ `[ ]`, `#`
+    Label preceding expressions. # to comment out what follows.
 __Arithmetic__ `+ - * / // % ^`
     `//` is integer division. `%` is remainder. `^` is power, not xor.
 __Comparison__ `= > < >= <= ~=`
     `{get_summon_prefix()}roll 1d20+5 >= 15`
 __Functions__ `agg() fact() repeat() sqrt() floor() ceil()`
-    `agg(<collection>, <operator>)` to aggregate the collection using the operator.
+    `agg(<collection>, <operator>)` to use the operator on each item.
         Valid operators are: `+ - * / % ^`. Dice rolls are already aggregated using `+`.
         Try `{get_summon_prefix()}roll agg(3d8, *)` or `{get_summon_prefix()}roll agg(repeat(3d6+2, 4), +)`
-    `fact(<N>)` is N factorial (`!` is reserved for exploding dice).
-    `repeat(<expression>, <n>)` repeats the evaluation, producing a n-size collection.
+    `fact(<N>)` is N factorial (`!` reserved for explode).
+    `repeat(<expr>, <n>)` repeats the expr, producing a n-size collection.
 __Parentheses__ `( )` for associativity and order of operations.
 __Braces__ `{{ }}` around comma-separated items for literal collections.
 __Semicolons__ `;` for many rolls at once.

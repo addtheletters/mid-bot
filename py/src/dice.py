@@ -23,6 +23,7 @@ KEYWORDS = [
 KEYWORD_PATTERN = "|".join(KEYWORDS)
 # fmt: off
 TOKEN_SPEC = [
+    ("LABEL",    r"\[.*?\]|#.*"),               # Labels, tags, comments
     ("NUMBER",   r"\d+(\.\d*)?"),               # Integer or decimal number
     ("KEYWORD",  KEYWORD_PATTERN),              # Keywords
     ("DICE",     r"[d]"),                       # Diceroll operators
@@ -70,11 +71,16 @@ def symbolize(symbol_table, intext: str):
         # https://docs.python.org/3.6/library/re.html#writing-a-tokenizer
         kind = item.lastgroup  # group name
         value = item.group()
-        if kind == "NUMBER":
+
+        if kind == "LABEL":
+            value = process_label_match(value)
+        elif kind == "NUMBER":
             if "." in value:
                 value = float(value)
             else:
                 value = int(value)
+        elif kind == "DIETYPE":
+            value = SpecialDie(value)
         # pass OP, END
         elif kind == "SKIP":
             continue
@@ -85,6 +91,8 @@ def symbolize(symbol_table, intext: str):
         symbol_id = kind
         if kind in ("OP", "DICE", "KEYWORD", "SEP", "COMP", "SETOP", "SETSEL"):
             symbol_id = value
+        if kind == "LABEL":
+            symbol_id = item.group()[0]
         try:  # look up symbol type
             symbol = symbol_table[symbol_id]
         except KeyError:
@@ -92,8 +100,10 @@ def symbolize(symbol_table, intext: str):
 
         # construct the symbol instance and populate its value if needed
         token = symbol()
-        if kind == "NUMBER":
+        if kind == "NUMBER" or kind == "DIETYPE":
             token._value = value
+        if kind == "LABEL":
+            token.label = value
         current_roll.append(token)
 
         # if reached an end token, wrap up the current roll
@@ -107,6 +117,20 @@ def symbolize(symbol_table, intext: str):
             current_roll.append(symbol_table["END"]())
         all_rolls.append(current_roll)
     return all_rolls
+
+
+def process_label_match(matched: str) -> str:
+    if matched[0] == "[":
+        if matched[-1] != "]":
+            raise RuntimeError(
+                f"Missing expected closing bracket of label regex match: {matched}"
+            )
+        return matched[1:-1]
+
+    if matched[0] == "#":
+        return matched[1:]
+
+    raise RuntimeError(f"Unexpected format for label regex match: {matched}")
 
 
 # Based on Pratt top-down operator precedence.
@@ -135,6 +159,9 @@ class Evaluator:
             self.first: Evaluator._Symbol | None = None
             self.second: Evaluator._Symbol | None = None
 
+            # tag or comment text
+            self.label: str | None = None
+
         def get_value(self):
             if self._value != None:
                 return self._value
@@ -159,6 +186,12 @@ class Evaluator:
         def should_spaces(self) -> bool:
             return False
 
+        def contains_raw_value(self) -> bool:
+            return self._kind == "NUMBER" or self._kind == "DIETYPE"
+
+        def is_grouping(self) -> bool:
+            return self._kind == "(" or self._kind == "[" or self._kind == "#"
+
         # Recursively describe this expression.
         # This should resemble the original input.
         # If `evaluated`, the description reduces nodes lacking dice operations
@@ -174,13 +207,32 @@ class Evaluator:
                     return f"{self._kind}"
                 if self.detail:
                     return ExprResult.description(self.detail, evaluated, top_level)
-                if self._kind != "NUMBER":
+                if not self.contains_raw_value():
                     print(self._kind)
                 return str(self)
 
+            if self.is_grouping():
+                if not self.first:
+                    raise RuntimeError(f"Missing first child for grouping node {self}")
+                if self.second:
+                    raise RuntimeError(
+                        f"Unexpected second child for grouping node {self}"
+                    )
+                raw_first = self.first.describe(
+                    evaluated=evaluated,
+                    top_level=top_level,
+                    absorbed_dice=absorbed_dice,
+                )
+                if self._kind == "(":  # parenthesis group
+                    return "(" + raw_first + ")"
+                if self._kind == "[":
+                    return raw_first + f"[{self.label}]"
+                if self._kind == "#":
+                    return raw_first + f" #{self.label}"
+
             absorb_child = False
             if evaluated:
-                if not self.contains_diceroll():
+                if not self.should_show_expansion():
                     if self.get_value() == None:
                         return escape(str(self))
                     return f"{self.get_value()}"
@@ -205,9 +257,6 @@ class Evaluator:
                     close_function = f",{spacer}{describe_second})"
                 return f"{self._kind}({describe_first}" + close_function
 
-            if self._kind == "(":  # parenthesis group
-                return "(" + describe_first + ")"
-
             left = describe_first
             right = describe_second
             op = escape(self._kind)
@@ -221,13 +270,13 @@ class Evaluator:
                 dice_description = ExprResult.description(
                     self.detail, evaluated, top_level
                 )
-                return f"{main_description} {dice_description}"
+                main_description = f"{main_description} {dice_description}"
 
             return main_description
 
         def __repr__(self):
-            if self._kind == "NUMBER":
-                return f"{self._value}"
+            if self.contains_raw_value():
+                return str(self._value)
             out = [self._kind, self.first, self.second]
             out = map(str, filter(None, out))  # type: ignore
             return "<" + " ".join(out) + ">"
@@ -236,9 +285,9 @@ class Evaluator:
             if self.detail != None:
                 return str(self.detail)
             final_value = self.get_value()
-            if final_value == None:
-                return str(self)
-            return str(final_value)
+            if final_value:
+                return str(final_value)
+            return str(self)
 
         def is_diceroll(self):
             return self._kind == "d" or (
@@ -278,13 +327,13 @@ class Evaluator:
             )
 
         # Is this node dice, or does could a node in this subtree have dice?
-        def contains_diceroll(self):
-            if self.is_collection():
+        def should_show_expansion(self):
+            if self.is_collection() or self.label:
                 return True
             if self.first != None:
-                has_dice = self.first.contains_diceroll()
+                has_dice = self.first.should_show_expansion()
                 if self.second != None:
-                    has_dice = has_dice or self.second.contains_diceroll()
+                    has_dice = has_dice or self.second.should_show_expansion()
                 return has_dice
             return False
 
@@ -716,6 +765,7 @@ def _reflex_nud(self, ev):
     return self
 
 
+# Beginning a parenthesis-grouped expression
 def _left_paren_nud(self, ev):
     self.first = ev.expr()
     self._value = self.first.get_value()
@@ -724,6 +774,7 @@ def _left_paren_nud(self, ev):
     return self
 
 
+# Beginning a literal set with comment-separated expressions
 def _left_brace_nud(self, ev: Evaluator):
     contents = []
     peeked = ev.peek()
@@ -750,6 +801,13 @@ def _left_brace_nud(self, ev: Evaluator):
     return self
 
 
+# Invisible (to other nodes) postfix operator attaching bracketed label to expression on the left
+def _label_operator(node, x):
+    # This node contains a label but otherwise behaves like a paren wrapper (but postfix).
+    node._value = x.get_value()
+    node.detail = x.detail
+
+
 def build_dash_nud(bind_power):
     def _dash_nud(self, ev):
         follower = ev.peek()
@@ -770,17 +828,17 @@ Evaluator.register_symbol(")")
 Evaluator.register_symbol(",")
 Evaluator.register_symbol("{").as_prefix = _left_brace_nud  # type: ignore
 Evaluator.register_symbol("}")
+Evaluator.register_symbol("DIETYPE").as_prefix = _reflex_nud  # type: ignore
 
+# Function-like operators
 Evaluator.register_function_double("repeat", _repeat_function)
 Evaluator.register_function_double("agg", _aggregate_function)
-
 Evaluator.register_function_single("ceil", _ceil_operator)
 Evaluator.register_function_single("floor", _floor_operator)
-
 Evaluator.register_function_single("fact", _factorial_operator)
 Evaluator.register_function_single("sqrt", _sqrt_operator)
 
-# Operators given reflex nud to allow their use as agg operands
+# Arithmetic operators given reflex nud to allow their use as agg operands
 Evaluator.register_infix("+", build_arithmetic_operator("+"), 10).as_prefix = _reflex_nud  # type: ignore
 Evaluator.register_infix(
     "-", build_arithmetic_operator("-"), 10
@@ -844,6 +902,10 @@ for comp in COMPARISONS.keys():
 # Dice
 Evaluator.register_infix("d", _dice_operator, 200)
 Evaluator.register_prefix("d", _dice_operator_prefix, 200)
+
+# Labels
+Evaluator.register_postfix("#", _label_operator, 1)
+Evaluator.register_postfix("[", _label_operator, 15)
 
 if __name__ == "__main__":
     while True:

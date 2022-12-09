@@ -1,12 +1,27 @@
+from enum import Enum
 import functools
 import operator
 import typing
 from functools import total_ordering
-from random import randint
+from random import choice, randint
 
 from utils import escape
 
 REROLL_CAP = 99
+
+
+class SpecialDie(Enum):
+    COIN = "c"
+    FATE = "F"
+
+    def __str__(self) -> str:
+        return self.value
+
+
+SPECIAL_DIE_SIDES = {
+    SpecialDie.COIN: {0: "T", 1: "H"},
+    SpecialDie.FATE: {-1: "-", 0: "0", 1: "+"},
+}
 
 
 def force_integral(value, description="") -> int:
@@ -205,7 +220,7 @@ class SetResult(ExprResult):
 class DiceValues(SetResult):
     def __init__(self, dice_size, items):
         super().__init__(items)
-        self.dice_size = dice_size
+        self.dice_size: int | SpecialDie = dice_size
         self.set_value(self.total())
 
     def __repr__(self):
@@ -215,31 +230,28 @@ class DiceValues(SetResult):
         return DiceValues(self.dice_size, self.elements)
 
     # Override to wrap and use `+` to join.
-    def get_description(self):
+    def get_description(self, joiner="+"):
+        if isinstance(self.dice_size, SpecialDie):
+            joiner = ","
+
         if self.get_all_count() == 1:
             return "(" + super().get_description() + ")"
         return (
             "("
-            + super().get_description(joiner="+")
+            + super().get_description(joiner=joiner)
             + "="
             + str(self.get_value())
             + ")"
         )
 
+    # Override to show special dice.
+    def format_element(self, element: SetElement):
+        if isinstance(self.dice_size, SpecialDie):
+            return element.formatted(SPECIAL_DIE_SIDES[self.dice_size][element.item])
+        return element.formatted()
+
     def get_dice_size(self):
         return self.dice_size
-
-    # Roll a new die and insert the value after `index`.
-    # With `keep` set to False, drops the existing item at `index`.
-    # Returns the rolled value.
-    def reroll_at(self, index: int, keep: bool = True):
-        if index < 0 or index >= len(self.elements):
-            raise IndexError(f"Can't reroll: no element, {index} is out of range")
-        if not keep:
-            self.drop_indices([index])
-        rerolled = single_roll(self.get_dice_size())
-        self.insert_item(index + 1, rerolled)
-        return rerolled
 
 
 # Represents several expressions' results collected together.
@@ -453,20 +465,32 @@ def invert_selection(all_count: int, selected: list[int]):
     return [i for i in range(all_count) if i not in selected]
 
 
-def single_roll(size) -> int:
+def single_roll(size: int | SpecialDie) -> int:
+    if isinstance(size, SpecialDie):
+        return special_roll(size)
+
     if size == 0:
         return 0
     else:
         return randint(1, size)
 
 
-def dice_roll(count, size):
-    count = force_integral(count, "dice count")
-    if size < 0:
-        raise ValueError(f"Negative dice don't exist (d{size})")
-    size = force_integral(size, "dice size")
+def special_roll(die_type: SpecialDie) -> int:
+    if die_type not in SPECIAL_DIE_SIDES:
+        raise ValueError(f"Unknown sides for special die ({die_type})")
+    options = [k for k in SPECIAL_DIE_SIDES[die_type]]
+    return choice(options)
+
+
+def dice_roll(count, size: int | SpecialDie):
     if count < 0:
         raise ValueError(f"Can't roll a negative number of dice ({count})")
+    count = force_integral(count, "dice count")
+
+    if not isinstance(size, SpecialDie):
+        if size < 0:
+            raise ValueError(f"Negative dice don't exist (d{size})")
+        size = force_integral(size, "dice size")
 
     rolls = []
     for i in range(count):
