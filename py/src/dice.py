@@ -719,11 +719,13 @@ def build_success_lambda(compare_operator, target):
 def build_infix_comparison(operator):
     def _comparison_operator(node, x, y):
         comparison_repr = f"{operator}{y.get_value()}"
-        single_set = SuccessValues([x.get_value()])
+        as_set = x.get_value()
+        if not isinstance(as_set, MultiExpr):
+            as_set = SuccessValues([x.get_value()])
         selector = ConditionalSelector(
             build_success_lambda(operator, y.get_value()), comparison_repr
         )
-        node.detail = set_op_count(single_set, selector.apply(single_set))
+        node.detail = set_op_count(as_set, selector.apply(as_set))
 
     return _comparison_operator
 
