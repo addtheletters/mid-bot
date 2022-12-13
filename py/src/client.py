@@ -42,6 +42,8 @@ class MidClient(commands.Bot):
         self.sync_manager = None
 
     def get_sync_manager(self) -> DataManager:
+        if self.sync_manager is None:
+            raise RuntimeError("Missing sync manager for MidClient bot.")
         return self.sync_manager
 
     def get_executor(self) -> cmds.PebbleExecutor:
@@ -60,7 +62,7 @@ class MidClient(commands.Bot):
             TEST_GUILD = (
                 discord.Object(id=int(TEST_GUILD_ID)) if TEST_GUILD_ID else None
             )
-            self.tree.copy_global_to(guild=TEST_GUILD)
+            self.tree.copy_global_to(guild=TEST_GUILD)  # type: ignore   
             await self.tree.sync(guild=TEST_GUILD)
         else:
             log.warn(f"No test guild id; only syncing tree to global. May take time for commands to appear.")
