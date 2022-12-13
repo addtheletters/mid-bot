@@ -29,7 +29,7 @@ TOKEN_SPEC = [
     ("DICE",     r"[d]"),                       # Diceroll operators
     ("DIETYPE",  r"[cF]"),                      # Special types of dice usable with the diceroll operator
     ("SETOP",    r"~?\?|[kp]|[!x]o?|rr?"),      # Set operators
-    ("SETSEL",   r"[hl]|even|odd"),             # Set selectors, not including comparisons
+    ("SETSEL",   r"[hl@]|even|odd"),            # Set selectors, not including comparisons
     ("COMP",     r"[><~]=|[><=]"),              # Comparisons, also usable as set selectors
     ("OP",       r"[+\-*×÷%^(){}]|//?"),        # Generic operators
     ("SEP",      r"[,]"),                       # Separators like commas
@@ -324,6 +324,7 @@ class Evaluator:
                 "l",
                 "even",
                 "odd",
+                "@",
             )
 
         # Is this node dice, or does could a node in this subtree have dice?
@@ -580,6 +581,10 @@ def _select_high_operator(node, x):
     node.detail = LowHighSelector(num=x.get_value(), high=True)
 
 
+def _select_index_operator(node, x):
+    node.detail = IndexSelector(index=x.get_value())
+
+
 def build_selector_nud(selector: SetSelector):
     def _nud(self, ev):
         self.detail = selector
@@ -720,7 +725,7 @@ def build_infix_comparison(operator):
     def _comparison_operator(node, x, y):
         comparison_repr = f"{operator}{y.get_value()}"
         as_set = x.get_value()
-        if not isinstance(as_set, MultiExpr):
+        if not isinstance(as_set, SetResult):
             as_set = SuccessValues([x.get_value()])
         selector = ConditionalSelector(
             build_success_lambda(operator, y.get_value()), comparison_repr
@@ -892,6 +897,7 @@ Evaluator.register_prefix("h", _select_high_operator, 190)
 Evaluator.register_prefix("l", _select_low_operator, 190)
 Evaluator.register_symbol("even").as_prefix = build_selector_nud(EvenOddSelector(odd=False))  # type: ignore
 Evaluator.register_symbol("odd").as_prefix = build_selector_nud(EvenOddSelector(odd=True))  # type: ignore
+Evaluator.register_prefix("@", _select_index_operator, 190)
 
 # Comparisons
 for comp in COMPARISONS.keys():
@@ -923,5 +929,6 @@ if __name__ == "__main__":
             RuntimeError,
             StopIteration,
             SyntaxError,
+            IndexError,
         ) as err:
             print(f"{err}")
