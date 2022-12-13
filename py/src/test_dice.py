@@ -168,6 +168,10 @@ class DiceTest(RollTest):
         dice.roll("repeat(4d6kh3, 6) # roll for stats!")
         dice.roll("(10d3+2)[fire] - 3d10[ice] # comment")
 
+    def test_interpret_index(self):
+        dice.roll("10d6k@3")
+        dice.roll("{3, 2, 1}?@0")
+
 
 class HelpExamplesTest(unittest.TestCase):
     def test_interpret_examples(self):
@@ -235,7 +239,16 @@ class SetTest(unittest.TestCase):
         )
         self.assertEqual(my_dice.get_value(), 11)
         self.assertGreater(exploded.get_value(), 11)  # type: ignore
+    
+    def test_select_index(self):
+        select_index_two = dice_details.IndexSelector(2).apply(self.setr)
+        self.assertEqual(len(select_index_two), 1)
+        self.assertEqual(self.values[select_index_two[0]], 3)
 
+        self.setr.drop_indices([0, 1])
+        select_after_drop = dice_details.IndexSelector(2).apply(self.setr)
+        self.assertEqual(len(select_after_drop), 1)
+        self.assertEqual(self.values[select_after_drop[0]], -5)
 
 if __name__ == "__main__":
     unittest.main()

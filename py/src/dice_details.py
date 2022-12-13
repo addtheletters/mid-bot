@@ -452,6 +452,7 @@ def _select_low_high(setr: SetResult, n: int, high: bool = False) -> list[int]:
     return [pair[0] for pair in sorted_pairs[:n]]
 
 
+# Set selector. Find all even or odd values in the set.
 class EvenOddSelector(ConditionalSelector):
     def __init__(self, odd: bool = False) -> None:
         self.odd = odd
@@ -459,6 +460,24 @@ class EvenOddSelector(ConditionalSelector):
             super().__init__(condition=lambda x: (x % 2 != 0), cond_repr="odd")
         else:
             super().__init__(condition=lambda x: (x % 2 == 0), cond_repr="even")
+
+
+# Set selector. Pick out a particular remaining item.
+class IndexSelector(SetSelector):
+    def __init__(self, index: int) -> None:
+        super().__init__()
+        self.index: int = index
+
+    def get_description(self) -> str:
+        return f"${self.index}"
+
+    def apply(self, setr: SetResult) -> list[int]:
+        try:
+            return [setr.get_remaining_enumerated()[self.index][0]]
+        except IndexError as ie:
+            raise IndexError(
+                f"{self.index} is not valid for indexing {setr.get_remaining_count()} values."
+            ) from ie
 
 
 def invert_selection(all_count: int, selected: list[int]):

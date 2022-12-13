@@ -126,7 +126,7 @@ __Counting__ `?`
     Filter and count how many items succeed.
     `{get_summon_prefix()}roll 4d6?=5` for how many times 5 is rolled from 4 six-sided dice. 
 __Keep/Drop__ `k`, `p`
-    `<collection>kh<N>` keeps the N highest values.
+    `<set>kh<N>` keeps the N highest values. `<set>k@<i>` to single out an index. 
     `{get_summon_prefix()}roll 4d6kh3` or `{get_summon_prefix()}roll repeat(3d6, 5)pl2`
 __Reroll__ `r` (reroll once), `rr` (reroll recursive)
     Reroll, replacing the original with the new.
@@ -146,13 +146,13 @@ __Arithmetic__ `+ - * / // % ^`
 __Comparison__ `= > < >= <= ~=`
     `{get_summon_prefix()}roll 1d20+5 >= 15`
 __Functions__ `agg() fact() repeat() sqrt() floor() ceil()`
-    `agg(<collection>, <operator>)` to use the operator on each item.
+    `agg(<set>, <operator>)` to use the operator on each item.
         Valid operators are: `+ - * / % ^`. Dice rolls are already aggregated using `+`.
         Try `{get_summon_prefix()}roll agg(3d8, *)` or `{get_summon_prefix()}roll agg(repeat(3d6+2, 4), +)`
     `fact(<N>)` is N factorial (`!` reserved for explode).
-    `repeat(<expr>, <n>)` repeats the expr, producing a n-size collection.
+    `repeat(<expr>, <n>)` repeats the expr, producing a n-size set.
 __Parentheses__ `( )` for associativity and order of operations.
-__Braces__ `{{ }}` around comma-separated items for literal collections.
+__Braces__ `{{ }}` around comma-separated items for literal sets.
 __Semicolons__ `;` for many rolls at once.
     `{get_summon_prefix()}roll 1d20+5; 2d6+5`
 """,
