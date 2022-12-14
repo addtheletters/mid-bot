@@ -73,3 +73,11 @@ def get_summon_prefix(guild_id=None):
 def get_help_notice(cmd=None):
     command_section = f" {cmd}" if cmd != None else ""
     return f"See `{get_summon_prefix()}{config.DEFAULT_HELP_KEY}{command_section}`."
+
+
+# Helper check for deafen having no response.
+def ignorable_check_failure(exception):
+    if isinstance(exception, commands.CheckFailure):
+        log.warn(exception)
+        return True
+    return False

@@ -47,9 +47,6 @@ def swap_hybrid_command_description(hybrid: commands.HybridCommand):
     hybrid.app_command.description = hybrid.brief
 
 
-P = typing.ParamSpec("P")
-
-
 async def as_subprocess_command(
     ctx: commands.Context, func: typing.Callable[..., typing.Any], *args, **kwargs
 ) -> typing.Any:
@@ -86,6 +83,7 @@ Sends the contents of your message back to you.
 The command keyword and bot prefix are excluded.
 """,
 )
+@commands.cooldown(1, 1, commands.BucketType.user)
 async def echo(
     ctx: commands.Context,
     *,
@@ -96,6 +94,8 @@ async def echo(
 
 @echo.error
 async def echo_error(ctx: commands.Context, error):
+    if ignorable_check_failure(error):
+        return
     if isinstance(error, commands.errors.MissingRequiredArgument):
         await reply(ctx, f"There is only silence.")
 
@@ -168,6 +168,8 @@ async def roll(
 
 @roll.error
 async def roll_error(ctx: commands.Context, error):
+    if ignorable_check_failure(error):
+        return
     await reply(ctx, f"{error}")
 
 
@@ -229,5 +231,7 @@ async def eject(
 
 @eject.error
 async def eject_error(ctx: commands.Context, error):
+    if ignorable_check_failure(error):
+        return
     if isinstance(error, commands.errors.MemberNotFound):
         await reply(ctx, f"Sorry, I don't know who {error.argument} is.")

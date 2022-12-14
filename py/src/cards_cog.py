@@ -34,7 +34,6 @@ class CardsData:
 
 class Cards(commands.Cog):
     def __init__(self, bot):
-        self.bot = bot
         self.data: CardsData = bot.get_sync_manager().CardsData()
         swap_hybrid_command_description(self.deck)  # type: ignore
 
