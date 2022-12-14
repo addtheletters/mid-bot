@@ -1,5 +1,6 @@
 # Utility functions.
 import logging
+import os
 import typing
 
 import config
@@ -66,6 +67,9 @@ def get_intents():
 # Get the prefix string that the bot will recognize for a given guild ID.
 # Currently the default is used across all guilds.
 def get_summon_prefix(guild_id=None):
+    SUMMON_PREFIX = os.getenv("SUMMON_PREFIX")
+    if SUMMON_PREFIX is not None:
+        return SUMMON_PREFIX
     return config.DEFAULT_SUMMON_PREFIX
 
 
