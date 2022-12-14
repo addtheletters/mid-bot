@@ -34,12 +34,20 @@ class Deafener(commands.Cog):
             self.time_for_undeafen = None
             return True
 
-    @commands.hybrid_command(brief="Make the bot temporarily unresponsive")
+    @commands.hybrid_command(
+        brief="Make the bot unable to hear",
+        description=f"""
+    __**deafen**__
+    Make the bot temporarily unresponsive, up to a maximum time of {MAX_DEAFEN_SECONDS} seconds.
+    Defaults to {DEFAULT_DEAFEN_SECONDS} seconds.
+    The **undeafen** command pierces through the deafness and forces the bot to start responding again.
+    """,
+    )
     async def deafen(
         self,
         ctx: commands.Context,
         seconds: int = commands.parameter(
-            description="How many seconds to deafen for. Max 300.",
+            description=f"How many seconds to deafen for. Max {MAX_DEAFEN_SECONDS}.",
             default=DEFAULT_DEAFEN_SECONDS,
         ),
     ):
@@ -55,7 +63,13 @@ class Deafener(commands.Cog):
 
         await reply(ctx, "Deafening bot for " + display_time)
 
-    @commands.hybrid_command(brief="Allow the bot to hear again")
+    @commands.hybrid_command(
+        brief="Allow the bot to hear again",
+        description=f"""
+    __**undeafen**__
+    If the **deafen** command is causing the bot to be unresponsive, this command will cancel the deafness.
+    """,
+    )
     async def undeafen(self, ctx: commands.Context):
         status = "The bot can hear you now."
         if self.time_for_undeafen is None:
