@@ -5,8 +5,9 @@ from multiprocessing.managers import SyncManager
 
 import cmds
 import discord
-from cardscog import Cards, CardsData
+from cards_cog import Cards, CardsData
 from config import *
+from deafen_cog import Deafener
 from discord.ext import commands
 from utils import *
 
@@ -22,7 +23,7 @@ class DataManager(SyncManager):
 # Bot client holding a pool of workers for running commands and a shared data manager.
 class MidClient(commands.Bot):
     misc_commands = [cmds.echo, cmds.shrug, cmds.roll, cmds.eject]
-    misc_cogs = [Cards]
+    misc_cogs = [Cards, Deafener]
     managed_types: dict = {"CardsData": CardsData}
 
     def __init__(self):
@@ -42,6 +43,8 @@ class MidClient(commands.Bot):
         self.sync_manager = None
 
     def get_sync_manager(self) -> DataManager:
+        if self.sync_manager is None:
+            raise RuntimeError("Missing sync manager for MidClient bot.")
         return self.sync_manager
 
     def get_executor(self) -> cmds.PebbleExecutor:
@@ -56,14 +59,18 @@ class MidClient(commands.Bot):
 
         TEST_GUILD_ID = os.getenv("TEST_GUILD_ID")
         if TEST_GUILD_ID != None:
-            log.info(f"Got test guild id: {TEST_GUILD_ID}; will sync app commands to test guild")
+            log.info(
+                f"Got test guild id: {TEST_GUILD_ID}; will sync app commands to test guild"
+            )
             TEST_GUILD = (
                 discord.Object(id=int(TEST_GUILD_ID)) if TEST_GUILD_ID else None
             )
-            self.tree.copy_global_to(guild=TEST_GUILD)
+            self.tree.copy_global_to(guild=TEST_GUILD)  # type: ignore
             await self.tree.sync(guild=TEST_GUILD)
         else:
-            log.warn(f"No test guild id; only syncing tree to global. May take time for commands to appear.")
+            log.warn(
+                f"No test guild id; only syncing tree to global. May take time for commands to appear."
+            )
             await self.tree.sync()
         return
 
@@ -96,6 +103,11 @@ class MidClient(commands.Bot):
             f"{self.user} is now connected to Discord in guilds:"
             + f"{[(g.name, g.id) for g in self.guilds]}"
         )
+
+    async def on_command_error(self, ctx: commands.Context, exception, /) -> None:
+        if ignorable_check_failure(exception):
+            return
+        return await super().on_command_error(ctx, exception)
 
     async def register_commands(self):
         for cmd in MidClient.misc_commands:

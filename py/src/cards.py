@@ -113,6 +113,8 @@ def create_card(card_string):
     suit = None
 
     matches = re.match("\d+\w+", card_string)
+    if matches is None:
+        raise RuntimeError(f"Failed to create card from input {card_string}")
     if matches[0] and matches[0] in Card.NUMBERS:
         rank = matches[0]
     if matches[1] and matches[1] in Card.SUITS:
