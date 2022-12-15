@@ -10,24 +10,27 @@ BIG_JOKER_SUIT = 2
 SMALL_JOKER_SUIT_CHAR = "(small)"
 SMALL_JOKER_SUIT = 1
 JOKER_NUMBER = 15
-JOKER_NUMBER_CHAR = 'joker'
+JOKER_NUMBER_CHAR = "joker"
 
 
 @total_ordering
 class Card(namedtuple("CardId", ["n", "s"])):
-    NUMBERS = ['2', '3', '4', '5', '6', '7',
-               '8', '9', '10', 'J', 'Q', 'K', 'A']
-    SUITS = ['♣', '♦', '♥', '♠']
+    NUMBERS = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"]
+    SUITS = ["♣", "♦", "♥", "♠"]
     SPECIAL = {
         (JOKER_NUMBER, 1): "SMALL_JOKER",
         (JOKER_NUMBER, 2): "BIG_JOKER",
     }
 
     def is_valid(self):
-        if self.n < 0 or self.s < 0\
-            or ((self.n >= len(Card.NUMBERS)
-                 or self.s >= len(Card.SUITS))
-                and (self.n, self.s) not in Card.SPECIAL):
+        if (
+            self.n < 0
+            or self.s < 0
+            or (
+                (self.n >= len(Card.NUMBERS) or self.s >= len(Card.SUITS))
+                and (self.n, self.s) not in Card.SPECIAL
+            )
+        ):
             return False
         return True
 
@@ -74,7 +77,7 @@ class Card(namedtuple("CardId", ["n", "s"])):
         return Card(JOKER_NUMBER, SMALL_JOKER_SUIT)
 
 
-class CustomCard():
+class CustomCard:
     def __init__(self, label):
         self.label = label
 
@@ -108,11 +111,12 @@ def draw(deck, count=1):
         print("Deck has no more cards to draw.")
     return drawn
 
+
 def create_card(card_string):
     rank = None
     suit = None
 
-    matches = re.match("\d+\w+", card_string)
+    matches = re.match(r"\d+\w+", card_string)
     if matches is None:
         raise RuntimeError(f"Failed to create card from input {card_string}")
     if matches[0] and matches[0] in Card.NUMBERS:

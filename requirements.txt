@@ -1,5 +1,6 @@
 # Direct dependencies are discord.py, Pebble, and python-dotenv.
 
+dateparser==1.1.4
 discord.py==2.0.1
 Pebble==5.0.2
 python-dotenv==0.21.0
@@ -15,5 +16,12 @@ python-dotenv==0.21.0
 # idna==3.4
 # multidict==6.0.2
 # Pebble==5.0.2
+# python-dateutil==2.8.2
 # python-dotenv==0.21.0
+# pytz==2022.6
+# pytz-deprecation-shim==0.1.0.post0
+# regex==2022.10.31
+# six==1.16.0
+# tzdata==2022.7
+# tzlocal==4.2
 # yarl==1.8.1
