@@ -29,7 +29,9 @@ def is_slash_command(ctx: commands.Context) -> bool:
 
 
 # Send a message to a context or messageable, truncating if it would exceed length limits.
-async def send_safe(ctx: commands.Context | discord.abc.Messageable, text: str):
+async def send_safe(
+    ctx: commands.Context | discord.abc.Messageable, text: str, **kwargs
+):
     payload = text
     if len(payload) > config.MAX_MESSAGE_LENGTH:
         cutoff = len(payload) - config.MAX_MESSAGE_LENGTH
@@ -38,18 +40,18 @@ async def send_safe(ctx: commands.Context | discord.abc.Messageable, text: str):
             + f" ... (message too long, truncated {cutoff} characters.)"
         )
     if isinstance(ctx, commands.Context):
-        await ctx.reply(payload)
+        return await ctx.reply(payload, **kwargs)
     else:
-        await ctx.send(payload)
+        return await ctx.send(payload, **kwargs)
 
 
 # Send `text` as a reply in the given context `ctx`.
 # Set `mention` to true to include an @ mention. Behavior if unset is to mention if not a slash command.
 async def reply(
-    ctx: commands.Context, text: str, mention: typing.Optional[bool] = None
+    ctx: commands.Context, text: str, mention: typing.Optional[bool] = None, **kwargs
 ):
     payload = f"{(ctx.author.mention + ' ') if mention else ''}{text}"
-    await send_safe(ctx, payload)
+    return await send_safe(ctx=ctx, text=payload, **kwargs)
 
 
 # Enclose `text` in a backticked codeblock.
