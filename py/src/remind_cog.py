@@ -2,7 +2,9 @@
 import logging
 import typing
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
+import config
 import dateparser
 import discord
 from cmds import swap_hybrid_command_description
@@ -16,6 +18,8 @@ CHECK_INTERVAL_SECONDS = 15
 REMIND_BUTTON_TEXT_ADD = "Remind me too!"
 REMIND_BUTTON_TEXT_REMOVE = "Don't remind me."
 REMIND_TARGET_SEPARATOR = " ⇒ "
+
+DEFAULT_TIMEZONE = ZoneInfo(config.DEFAULT_TIMEZONE_NAME)
 
 
 class RemindEntry:
@@ -45,7 +49,10 @@ class RemindEntry:
             await send_safe(self.context, decorated)
 
     def should_send(self):
-        return self.time < (datetime.now() + timedelta(seconds=CHECK_INTERVAL_SECONDS))
+        return self.time < (
+            datetime.now(tz=self.time.tzinfo)
+            + timedelta(seconds=CHECK_INTERVAL_SECONDS)
+        )
 
     def get_targets(self):
         return self.targets
@@ -61,12 +68,16 @@ class RemindEntry:
     def is_user_involved(self, user: discord.User | discord.Member) -> bool:
         return self.was_authored_by(user) or (user in self.get_targets())
 
+    def delta_from_creation(self) -> timedelta:
+        return self.time - self.context.message.created_at.replace(microsecond=0)
+
 
 def short_format_time(time: datetime):
-    return f"{time:%a, %x, %H:%M}"
+    return f"{time:%a, %x, %H:%M %Z}"
 
 
 def contains_am_or_pm(timestr: str):
+    timestr = timestr.upper()
     return timestr.find("AM") >= 0 or timestr.find("PM") >= 0
 
 
@@ -100,33 +111,34 @@ class Reminder(commands.Cog):
 
     def add_to_reminder(
         self, entry_id: int, user: discord.User | discord.Member
-    ) -> bool:
+    ) -> None:
         if entry_id not in self.reminders:
-            return False
+            raise ValueError(f"The specified reminder isn't valid (#{entry_id}).")
         if user in self.reminders[entry_id].get_targets():
-            return False
+            raise ValueError(f"Already included in the reminder.")
         self.reminders[entry_id].targets.append(user)
-        return True
 
     def remove_from_reminder(
         self, entry_id: int, user: discord.User | discord.Member
-    ) -> bool:
+    ) -> None:
         if entry_id not in self.reminders:
-            return False
+            raise ValueError(f"The specified reminder isn't valid (#{entry_id}).")
         self.reminders[entry_id].targets.remove(user)
-        return True
 
     def reminder_set_message(self, entry_id: int):
         if entry_id not in self.reminders:
             return f"Reminder #{entry_id} not found."
         entry = self.reminders[entry_id]
-        return f"Reminder #{entry_id} set for {short_format_time(entry.time)}."
+        return f"Reminder #{entry_id} set for {short_format_time(entry.time)}. (in {entry.delta_from_creation()})"
 
     def cancel(self, entry_id: int):
         return self.reminders.pop(entry_id)
 
     def build_parse_settings(self):
-        return {"PREFER_DATES_FROM": "future", "PREFER_DAY_OF_MONTH": "first"}
+        return {
+            "PREFER_DAY_OF_MONTH": "first",
+            "TIMEZONE": config.DEFAULT_TIMEZONE_NAME,
+        }
 
     @commands.hybrid_command(
         aliases=["rem"],
@@ -152,16 +164,22 @@ class Reminder(commands.Cog):
         if parsed_time is None:
             await reply(ctx, f'Can\'t parse time "{time}".')
             return
-        if parsed_time < (datetime.now() - timedelta(minutes=1)):
+        log.info(f"raw parsed time: {short_format_time(parsed_time)}")
+        if parsed_time.tzinfo is None:
+            parsed_time = parsed_time.replace(tzinfo=DEFAULT_TIMEZONE)
+            detail_message += f" (assuming {parsed_time.tzname()} time zone)"
+        if parsed_time < (datetime.now(tz=parsed_time.tzinfo) - timedelta(minutes=1)):
             if parsed_time.hour >= 12 or contains_am_or_pm(time):
                 await reply(
-                    ctx, f"Time ({short_format_time(parsed_time)}) is in the past!"
+                    ctx,
+                    f"Time ({short_format_time(parsed_time)}) is in the past!"
+                    + detail_message,
                 )
                 return
             parsed_time = parsed_time + timedelta(hours=12)
-            detail_message = " (assuming 12-hour-clock PM time)"
+            detail_message += f" (assuming 12-hour-clock PM time)"
 
-        parsed_time.replace(microsecond=0)
+        parsed_time = parsed_time.replace(microsecond=0)
         self.reminders[entry_id] = RemindEntry(
             context=ctx, message=text, time=parsed_time, targets=[ctx.author]
         )
@@ -177,6 +195,8 @@ class Reminder(commands.Cog):
             return
         if isinstance(error, commands.errors.MissingRequiredArgument):
             await reply(ctx, f"Can't set reminder: {error}")
+            return
+        raise error
 
     @commands.hybrid_command(
         brief="Check your reminders",
@@ -243,17 +263,19 @@ class ReminderView(discord.ui.View):
     async def me_too_pressed(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        success = self.rcog.add_to_reminder(
-            entry_id=self.entry_id, user=interaction.user
-        )
-        if not success:
+        try:
+            self.rcog.add_to_reminder(entry_id=self.entry_id, user=interaction.user)
+        except ValueError as err:
             await interaction.response.send_message(
-                "Sorry, can't add you to this reminder.", ephemeral=True
+                f"Sorry, can't add you: {err}", ephemeral=True
             )
             return
 
-        content = self.rcog.reminder_set_message(self.entry_id)
-        content = content + " " + self.rcog.reminders[self.entry_id].target_mentions()
+        content = (
+            self.rcog.reminder_set_message(self.entry_id)
+            + " "
+            + self.rcog.reminders[self.entry_id].target_mentions()
+        )
         await interaction.response.edit_message(content=content, view=self)
 
     @discord.ui.button(
@@ -262,18 +284,13 @@ class ReminderView(discord.ui.View):
     async def remove_me_pressed(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        success = False
         try:
-            success = self.rcog.remove_from_reminder(
+            self.rcog.remove_from_reminder(
                 entry_id=self.entry_id, user=interaction.user
             )
-        except ValueError:
-            log.info(
-                f"Failed to remove user {interaction.user.name} from reminder #{self.entry_id}"
-            )
-        if not success:
+        except ValueError as err:
             await interaction.response.send_message(
-                "Sorry, can't remove you from this reminder.", ephemeral=True
+                f"Sorry, can't remove you: {err}", ephemeral=True
             )
             return
 
@@ -285,6 +302,9 @@ class ReminderView(discord.ui.View):
             )
             return
 
-        content = self.rcog.reminder_set_message(self.entry_id)
-        content = content + " " + self.rcog.reminders[self.entry_id].target_mentions()
+        content = (
+            self.rcog.reminder_set_message(self.entry_id)
+            + " "
+            + self.rcog.reminders[self.entry_id].target_mentions()
+        )
         await interaction.response.edit_message(content=content, view=self)

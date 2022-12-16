@@ -98,6 +98,8 @@ async def echo_error(ctx: commands.Context, error):
         return
     if isinstance(error, commands.errors.MissingRequiredArgument):
         await reply(ctx, f"There is only silence.")
+        return
+    raise error
 
 
 @commands.hybrid_command(
@@ -235,3 +237,5 @@ async def eject_error(ctx: commands.Context, error):
         return
     if isinstance(error, commands.errors.MemberNotFound):
         await reply(ctx, f"Sorry, I don't know who {error.argument} is.")
+        return
+    raise error
