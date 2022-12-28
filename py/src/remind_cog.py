@@ -134,11 +134,21 @@ class Reminder(commands.Cog):
     def cancel(self, entry_id: int):
         return self.reminders.pop(entry_id)
 
-    def build_parse_settings(self):
+    def build_parse_settings_future(self):
+        return {
+            "PREFER_DATES_FROM": "future",
+            "PREFER_DAY_OF_MONTH": "first",
+            "TIMEZONE": config.DEFAULT_TIMEZONE_NAME,
+        }
+
+    def build_parse_settings_current(self):
         return {
             "PREFER_DAY_OF_MONTH": "first",
             "TIMEZONE": config.DEFAULT_TIMEZONE_NAME,
         }
+
+    def too_far_in_past(self, time: datetime):
+        return time < (datetime.now(tz=time.tzinfo) - timedelta(minutes=1))
 
     @commands.hybrid_command(
         aliases=["rem"],
@@ -157,28 +167,54 @@ class Reminder(commands.Cog):
         self.next_id += 1
 
         parsed_time = None
+        closer_time = None
+        time_ambiguous: bool = False
         detail_message = ""
-
         async with ctx.typing():
-            parsed_time = dateparser.parse(time, settings=self.build_parse_settings())  # type: ignore
-        if parsed_time is None:
-            await reply(ctx, f'Can\'t parse time "{time}".')
-            return
-        log.info(f"raw parsed time: {short_format_time(parsed_time)}")
-        if parsed_time.tzinfo is None:
-            parsed_time = parsed_time.replace(tzinfo=DEFAULT_TIMEZONE)
-            detail_message += f" (assuming {parsed_time.tzname()} time zone)"
-        if parsed_time < (datetime.now(tz=parsed_time.tzinfo) - timedelta(minutes=1)):
-            if parsed_time.hour >= 12 or contains_am_or_pm(time):
-                await reply(
-                    ctx,
-                    f"Time ({short_format_time(parsed_time)}) is in the past!"
-                    + detail_message,
-                )
+            parsed_time = dateparser.parse(time, settings=self.build_parse_settings_future())  # type: ignore
+            if parsed_time is None:
+                await reply(ctx, f'Can\'t parse time "{time}".')
                 return
-            parsed_time = parsed_time + timedelta(hours=12)
-            detail_message += f" (assuming 12-hour-clock PM time)"
+            if parsed_time.tzinfo is None:
+                parsed_time = parsed_time.replace(tzinfo=DEFAULT_TIMEZONE)
+                detail_message += f" (assuming {parsed_time.tzname()} time zone)"
 
+            # Check for date ambiguity
+            closer_time = dateparser.parse(time, settings=self.build_parse_settings_current())  # type: ignore
+            if closer_time and parsed_time != closer_time:
+                time_ambiguous = True
+
+                if closer_time.tzinfo is None:
+                    closer_time = closer_time.replace(tzinfo=DEFAULT_TIMEZONE)
+                # sensibly override AM/PM if it seems off (in the past)
+                if (
+                    self.too_far_in_past(closer_time)
+                    and closer_time.hour < 12
+                    and not contains_am_or_pm(time)
+                ):
+                    closer_time = closer_time + timedelta(hours=12)
+                    detail_message = f" (assuming 12-hour-clock PM time)"
+
+        # if ambiguous, use least-far time still in the future
+        if (
+            time_ambiguous
+            and closer_time is not None
+            and not self.too_far_in_past(closer_time)
+            and closer_time < parsed_time
+        ):
+            parsed_time = closer_time
+            detail_message += f" (assuming today rather than tomorrow)"
+
+        # fail if more than 1 minute in the past
+        if self.too_far_in_past(parsed_time):
+            await reply(
+                ctx,
+                f"Time ({short_format_time(parsed_time)}) is in the past!"
+                + detail_message,
+            )
+            return
+
+        log.info(f"setting reminder for time: {short_format_time(parsed_time)}")
         parsed_time = parsed_time.replace(microsecond=0)
         self.reminders[entry_id] = RemindEntry(
             context=ctx, message=text, time=parsed_time, targets=[ctx.author]
