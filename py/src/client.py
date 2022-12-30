@@ -9,6 +9,7 @@ import discord
 from bongo import bongo
 from cogs.cards_cog import Cards, CardsData
 from cogs.deafen_cog import Deafener
+from cogs.dice_cog import DiceRoller
 from cogs.remind_cog import Reminder
 from config import *
 from discord.ext import commands
@@ -103,8 +104,8 @@ async def help_app_command(interaction: discord.Interaction, command: Optional[s
 
 # Bot client holding a pool of workers for running commands and a shared data manager.
 class MidClient(commands.Bot):
-    misc_commands = [cmds.echo, cmds.shrug, cmds.roll, cmds.rollsave, cmds.eject, bongo]
-    misc_cogs = [Cards, Deafener, Reminder]
+    misc_commands = [cmds.echo, cmds.shrug, cmds.eject, bongo]
+    misc_cogs = [Cards, Deafener, DiceRoller, Reminder]
     managed_types: dict = {"CardsData": CardsData}
 
     def __init__(self):
