@@ -80,7 +80,7 @@ class MacroData:
         nested = MacroData.MACRO_REGEX.match(contents)
         if nested:
             log.warning(f"{name} contains another nested macro {nested.group()}")
-            if nested.group() == name:
+            if nested.group() == ("$" + name):
                 raise ValueError(f"can't add self-referential macro")
         ret = None
         if name in self._macros:

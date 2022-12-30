@@ -102,6 +102,7 @@ class DiceRoller(commands.Cog):
             old = self.macro_data.add_macro(name=name, contents=contents)
         except ValueError as err:
             await reply(ctx, f"Error saving macro: {err}")
+            return
         if old is not None:
             await reply(ctx, f"Overwrote macro: {name} = ~~{old}~~ ⇒ {contents}")
         else:
@@ -114,6 +115,7 @@ class DiceRoller(commands.Cog):
             await reply(ctx, f"Deleted macro: {name} = {contents}")
         except ValueError as err:
             await reply(ctx, f"Error deleting macro: {err}")
+            return
 
     @commands.hybrid_command(aliases=["rolllist", "rl"], brief="List all macros")
     async def macros(self, ctx: commands.Context):
