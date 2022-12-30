@@ -14,3 +14,5 @@ This bot relies on:
 - [discord.py](https://discordpy.readthedocs.io/en/latest/)
 - [python-dotenv](https://saurabh-kumar.com/python-dotenv/)
 - [Pebble](https://pypi.org/project/Pebble/)
+- [dateparser](https://dateparser.readthedocs.io/en/latest/)
+- [aiohttp](https://docs.aiohttp.org/en/stable/)
