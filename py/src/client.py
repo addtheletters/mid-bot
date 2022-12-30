@@ -103,7 +103,7 @@ async def help_app_command(interaction: discord.Interaction, command: Optional[s
 
 # Bot client holding a pool of workers for running commands and a shared data manager.
 class MidClient(commands.Bot):
-    misc_commands = [cmds.echo, cmds.shrug, cmds.roll, cmds.eject, bongo]
+    misc_commands = [cmds.echo, cmds.shrug, cmds.roll, cmds.rollsave, cmds.eject, bongo]
     misc_cogs = [Cards, Deafener, Reminder]
     managed_types: dict = {"CardsData": CardsData}
 

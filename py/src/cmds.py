@@ -186,6 +186,21 @@ def _roll(formula: str) -> str:
     return output
 
 
+@commands.hybrid_command(aliases=["rs"], brief="Save a roll macro")
+async def rollsave(ctx: commands.Context, name: str, contents: str):
+    dice.GLOBAL_MACROS.add_macro(name=name, contents=contents)
+    await reply(ctx, f"Saved macro: {name} = {contents}")
+
+
+@rollsave.error
+async def rollsave_error(ctx: commands.Context, error):
+    if ignorable_check_failure(error):
+        return
+    if isinstance(error, ValueError):
+        await reply(ctx, f"Error saving macro: {error}")
+    raise error
+
+
 @commands.hybrid_command(
     aliases=["kill"],
     brief="Eject an impostor",

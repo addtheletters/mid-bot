@@ -99,8 +99,8 @@ class MacroData:
 
 
 GLOBAL_MACROS = MacroData()
-GLOBAL_MACROS.add_macro("$stats", "repeat(4d6kh3, 6)")
-GLOBAL_MACROS.add_macro("$double", "{$stats, $stats}")
+GLOBAL_MACROS.add_macro("stats", "repeat(4d6kh3, 6)")
+GLOBAL_MACROS.add_macro("double", "{$stats, $stats}")
 
 
 # Inner function for symbolize.
@@ -124,12 +124,13 @@ def _symbolize(
         elif kind == "DIETYPE":
             value = SpecialDie(value)
         elif kind == "MACRO":
-            macro = GLOBAL_MACROS.get_macro_content(value)
+            mname = value[1:]
+            macro = GLOBAL_MACROS.get_macro_content(mname)
             if macro is None:
-                raise RuntimeError(f"Can't find macro {value}")
+                raise RuntimeError(f"Can't find macro {mname}")
             if depth > MACRO_DEPTH_CAP:
                 raise RuntimeError(
-                    f"Exceeded maximum macro depth {MACRO_DEPTH_CAP} with {value}"
+                    f"Exceeded maximum macro depth {MACRO_DEPTH_CAP} with {mname}"
                 )
             all_rolls, current_roll = _symbolize(
                 symbol_table=symbol_table,
