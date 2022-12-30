@@ -10,3 +10,4 @@ pyvenv.cfg
 
 # pycache
 src/__pycache__/
+src/cogs/__pycache__/

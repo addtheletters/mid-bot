@@ -6,11 +6,12 @@ from typing import Optional
 
 import cmds
 import discord
-from cards_cog import Cards, CardsData
+from bongo import bongo
+from cogs.cards_cog import Cards, CardsData
+from cogs.deafen_cog import Deafener
+from cogs.remind_cog import Reminder
 from config import *
-from deafen_cog import Deafener
 from discord.ext import commands
-from remind_cog import Reminder
 from utils import *
 
 log = logging.getLogger(__name__)
@@ -102,7 +103,7 @@ async def help_app_command(interaction: discord.Interaction, command: Optional[s
 
 # Bot client holding a pool of workers for running commands and a shared data manager.
 class MidClient(commands.Bot):
-    misc_commands = [cmds.echo, cmds.shrug, cmds.roll, cmds.eject]
+    misc_commands = [cmds.echo, cmds.shrug, cmds.roll, cmds.eject, bongo]
     misc_cogs = [Cards, Deafener, Reminder]
     managed_types: dict = {"CardsData": CardsData}
 
