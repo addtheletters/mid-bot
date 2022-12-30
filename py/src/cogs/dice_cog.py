@@ -9,10 +9,10 @@ from utils import *
 log = logging.getLogger(__name__)
 
 
-def _roll(formula: str) -> str:
+def _roll(formula: str, macro_data: dice.MacroData) -> str:
     output = "No result."
     try:
-        roll_result = dice.roll(formula)
+        roll_result = dice.roll(formula, macro_data=macro_data)
         output = dice.format_roll_results(roll_result)
     except Exception as err:
         log.info(f"Roll error. {err}")
@@ -22,8 +22,14 @@ def _roll(formula: str) -> str:
 
 class DiceRoller(commands.Cog):
     def __init__(self, bot) -> None:
+        self.macro_data: dice.MacroData = bot.get_sync_manager().MacroData()
+        self.add_default_macros()
         swap_hybrid_command_description(self.roll)
         swap_hybrid_command_description(self.rollsave)
+
+    def add_default_macros(self):
+        self.macro_data.add_macro("stats", "repeat(4d6kh3, 6)")
+        self.macro_data.add_macro("double", "{$stats, $stats}")
 
     @commands.hybrid_command(
         aliases=["r"],
@@ -80,7 +86,7 @@ class DiceRoller(commands.Cog):
             description="The dice roll formula to evaluate"
         ),
     ):
-        output = await as_subprocess_command(ctx, _roll, formula)
+        output = await as_subprocess_command(ctx, _roll, formula, self.macro_data)
         await reply(ctx, output)
 
     @roll.error
@@ -91,7 +97,7 @@ class DiceRoller(commands.Cog):
 
     @commands.hybrid_command(aliases=["rs"], brief="Save a roll macro")
     async def rollsave(self, ctx: commands.Context, name: str, contents: str):
-        dice.GLOBAL_MACROS.add_macro(name=name, contents=contents)
+        self.macro_data.add_macro(name=name, contents=contents)
         await reply(ctx, f"Saved macro: {name} = {contents}")
 
     @rollsave.error

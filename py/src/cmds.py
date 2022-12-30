@@ -39,7 +39,9 @@ class PebbleExecutor(concurrent.futures.Executor):
 
 # Since app commands cannot accept a >100 character description,
 # swap that field for the brief when we register hybrid commands.
-def swap_hybrid_command_description(hybrid: commands.HybridCommand):
+def swap_hybrid_command_description(
+    hybrid: commands.HybridCommand | commands.HybridGroup,
+):
     if not hybrid.app_command or not hybrid.brief:
         raise RuntimeError(
             f"Tried to swap missing description/brief on hybrid command {hybrid}"

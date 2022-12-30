@@ -12,6 +12,7 @@ from cogs.deafen_cog import Deafener
 from cogs.dice_cog import DiceRoller
 from cogs.remind_cog import Reminder
 from config import *
+from dice import MacroData
 from discord.ext import commands
 from utils import *
 
@@ -106,7 +107,7 @@ async def help_app_command(interaction: discord.Interaction, command: Optional[s
 class MidClient(commands.Bot):
     misc_commands = [cmds.echo, cmds.shrug, cmds.eject, bongo]
     misc_cogs = [Cards, Deafener, DiceRoller, Reminder]
-    managed_types: dict = {"CardsData": CardsData}
+    managed_types: dict = {"CardsData": CardsData, "MacroData": MacroData}
 
     def __init__(self):
         commands.Bot.__init__(

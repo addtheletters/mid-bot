@@ -98,15 +98,23 @@ class MacroData:
         return None
 
 
-GLOBAL_MACROS = MacroData()
-GLOBAL_MACROS.add_macro("stats", "repeat(4d6kh3, 6)")
-GLOBAL_MACROS.add_macro("double", "{$stats, $stats}")
+def get_default_macros():
+    md = MacroData()
+    md.add_macro("stats", "repeat(4d6kh3, 6)")
+    md.add_macro("double", "{$stats, $stats}")
+    return md
 
 
 # Inner function for symbolize.
 # Returns the all_rolls and current_roll lists with symbols from intext added.
+# Recursively called for macro expansion.
 def _symbolize(
-    symbol_table, intext: str, all_rolls: list = [], current_roll: list = [], depth=0
+    symbol_table,
+    intext: str,
+    macro_data: MacroData,
+    all_rolls: list = [],
+    current_roll: list = [],
+    depth=0,
 ):
     for item in TOKEN_PATTERN.finditer(intext):
         # Cut input into tokens.
@@ -125,7 +133,7 @@ def _symbolize(
             value = SpecialDie(value)
         elif kind == "MACRO":
             mname = value[1:]
-            macro = GLOBAL_MACROS.get_macro_content(mname)
+            macro = macro_data.get_macro_content(mname)
             if macro is None:
                 raise RuntimeError(f"Can't find macro {mname}")
             if depth > MACRO_DEPTH_CAP:
@@ -135,6 +143,7 @@ def _symbolize(
             all_rolls, current_roll = _symbolize(
                 symbol_table=symbol_table,
                 intext=macro,
+                macro_data=macro_data,
                 all_rolls=all_rolls,
                 current_roll=current_roll,
                 depth=depth + 1,
@@ -175,13 +184,14 @@ def _symbolize(
 
 
 # Tokenizes a formula to symbol instances and divides them into individual rolls.
-def symbolize(symbol_table, intext: str):
+def symbolize(symbol_table, intext: str, macro_data: MacroData):
     all_rolls = []
     current_roll = []
 
     all_rolls, current_roll = _symbolize(
         symbol_table=symbol_table,
         intext=intext,
+        macro_data=macro_data,
         all_rolls=all_rolls,
         current_roll=current_roll,
     )
@@ -588,11 +598,15 @@ class Evaluator:
         return ret
 
 
-def roll(formula: str):
+def roll(formula: str, macro_data: MacroData | None = None):
     if len(formula) < 1:
         raise ValueError("Roll formula is empty.")
+
+    if macro_data is None:
+        macro_data = get_default_macros()
+    rolls = symbolize(Evaluator.SYMBOL_TABLE, formula, macro_data)
+
     results = []
-    rolls = symbolize(Evaluator.SYMBOL_TABLE, formula)
     for roll in rolls:
         e = Evaluator(roll)
         results.append(e.evaluate())
@@ -991,10 +1005,11 @@ Evaluator.register_postfix("#", _label_operator, 1)
 Evaluator.register_postfix("[", _label_operator, 15)
 
 if __name__ == "__main__":
+    macro_data = get_default_macros()
     while True:
         intext = input()
         try:
-            symbols = symbolize(Evaluator.SYMBOL_TABLE, intext)
+            symbols = symbolize(Evaluator.SYMBOL_TABLE, intext, macro_data)
             print(symbols)
             results = roll(intext)
             print(format_roll_results(results))

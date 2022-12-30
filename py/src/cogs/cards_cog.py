@@ -35,7 +35,7 @@ class CardsData:
 class Cards(commands.Cog):
     def __init__(self, bot):
         self.data: CardsData = bot.get_sync_manager().CardsData()
-        swap_hybrid_command_description(self.deck)  # type: ignore
+        swap_hybrid_command_description(self.deck)
 
     def add_history_log(self, ctx: commands.Context, reply: str) -> str:
         card_log = f"{ctx.author.name} [{ctx.command.name}]: {reply if ctx.command.name != 'history' else 'viewed history.'}"  # type: ignore

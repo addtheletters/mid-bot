@@ -254,14 +254,20 @@ class SetTest(unittest.TestCase):
 class MacroTest(RollTest):
     def setUp(self) -> None:
         self.my_pi = 3.14159
-        dice.GLOBAL_MACROS.add_macro("$pi", str(self.my_pi))
+        self.test_macros = dice.get_default_macros()
+        self.test_macros.add_macro("pi", str(self.my_pi))
+
+    # override
+    def assertFirstRollEquals(self, roll_input, expected):
+        results = dice.roll(roll_input, self.test_macros)
+        self.assertAlmostEqual(results[0].get_value(), expected)
 
     def test_constant_macro(self):
         self.assertFirstRollEquals("$pi", self.my_pi)
         self.assertFirstRollEquals("$pi + $pi", self.my_pi + self.my_pi)
 
     def test_interpret_stats(self):
-        self.assertIsNotNone(dice.GLOBAL_MACROS.get_macro_content("$stats"))
+        self.assertIsNotNone(self.test_macros.get_macro_content("stats"))
         dice.roll("$stats")
         dice.roll("{$stats, $stats}[twice, for fun]")
 
