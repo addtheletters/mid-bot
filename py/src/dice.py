@@ -4,7 +4,7 @@
 import logging
 import re
 import typing
-from math import ceil, factorial, floor, sqrt, perm
+from math import ceil, factorial, floor, perm, sqrt
 
 from dice_details import *
 from utils import codeblock, escape
@@ -73,29 +73,38 @@ class MacroData:
     MACRO_REGEX = re.compile(MACRO_PATTERN)
 
     def __init__(self) -> None:
-        self.macros: dict[str, str] = {}
+        self._macros: dict[str, str] = {}
 
-    def add_macro(self, name: str, contents: str) -> None:
+    # If an existing macro has the name, overwrite it and return its old contents.
+    def add_macro(self, name: str, contents: str) -> str | None:
         nested = MacroData.MACRO_REGEX.match(contents)
         if nested:
             log.warning(f"{name} contains another nested macro {nested.group()}")
             if nested.group() == name:
                 raise ValueError(f"can't add self-referential macro")
-        if name in self.macros:
-            log.info(f"macro: overwriting {name}: {self.macros[name]} with: {contents}")
+        ret = None
+        if name in self._macros:
+            ret = self._macros[name]
+            log.info(f"macro: overwriting {name}: {ret} with: {contents}")
         else:
             log.info(f"macro: saving {name}: {contents}")
-        self.macros[name] = contents
+        self._macros[name] = contents
+        return ret
 
-    def delete_macro(self, name: str) -> None:
-        if name not in self.macros:
+    # Raises ValueError if the named macro doesn't exist.
+    # Returns the deleted macro's contents.
+    def delete_macro(self, name: str) -> str:
+        if name not in self._macros:
             raise ValueError(f"can't find macro {name} to remove")
-        self.macros.pop(name)
+        return self._macros.pop(name)
 
     def get_macro_content(self, name: str):
-        if name in self.macros:
-            return self.macros[name]
+        if name in self._macros:
+            return self._macros[name]
         return None
+
+    def get_all_macros(self):
+        return self._macros
 
 
 def get_default_macros():

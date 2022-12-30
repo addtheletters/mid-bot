@@ -97,13 +97,31 @@ class DiceRoller(commands.Cog):
 
     @commands.hybrid_command(aliases=["rs"], brief="Save a roll macro")
     async def rollsave(self, ctx: commands.Context, name: str, contents: str):
-        self.macro_data.add_macro(name=name, contents=contents)
-        await reply(ctx, f"Saved macro: {name} = {contents}")
+        old = None
+        try:
+            old = self.macro_data.add_macro(name=name, contents=contents)
+        except ValueError as err:
+            await reply(ctx, f"Error saving macro: {err}")
+        if old is not None:
+            await reply(ctx, f"Overwrote macro: {name} = ~~{old}~~ ⇒ {contents}")
+        else:
+            await reply(ctx, f"Saved macro: {name} = {contents}")
 
-    @rollsave.error
-    async def rollsave_error(self, ctx: commands.Context, error):
-        if ignorable_check_failure(error):
-            return
-        if isinstance(error, ValueError):
-            await reply(ctx, f"Error saving macro: {error}")
-        raise error
+    @commands.hybrid_command(aliases=["rd"], brief="Delete a roll macro")
+    async def rolldel(self, ctx: commands.Context, name: str):
+        try:
+            contents = self.macro_data.delete_macro(name=name)
+            await reply(ctx, f"Deleted macro: {name} = {contents}")
+        except ValueError as err:
+            await reply(ctx, f"Error deleting macro: {err}")
+
+    @commands.hybrid_command(aliases=["rolllist", "rl"], brief="List all macros")
+    async def macros(self, ctx: commands.Context):
+        mlist = [
+            f"{name} = {contents}"
+            for name, contents in self.macro_data.get_all_macros().items()
+        ]
+        output = f"{len(mlist)} macro(s) available: \n" + codeblock(
+            "\n".join(mlist), big=True
+        )
+        await reply(ctx, text=output)
