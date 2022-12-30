@@ -162,7 +162,7 @@ class DiceTest(RollTest):
     def test_interpret_special(self):
         dice.roll("20dc")
         dice.roll("10dF")
-    
+
     def test_interpret_label(self):
         dice.roll("2d6 [slashing] + 1d4 [bonus damage]")
         dice.roll("repeat(4d6kh3, 6) # roll for stats!")
@@ -239,7 +239,7 @@ class SetTest(unittest.TestCase):
         )
         self.assertEqual(my_dice.get_value(), 11)
         self.assertGreater(exploded.get_value(), 11)  # type: ignore
-    
+
     def test_select_index(self):
         select_index_two = dice_details.IndexSelector(2).apply(self.setr)
         self.assertEqual(len(select_index_two), 1)
@@ -249,6 +249,22 @@ class SetTest(unittest.TestCase):
         select_after_drop = dice_details.IndexSelector(2).apply(self.setr)
         self.assertEqual(len(select_after_drop), 1)
         self.assertEqual(self.values[select_after_drop[0]], -5)
+
+
+class MacroTest(RollTest):
+    def setUp(self) -> None:
+        self.my_pi = 3.14159
+        dice.GLOBAL_MACROS.add_macro("$pi", str(self.my_pi))
+
+    def test_constant_macro(self):
+        self.assertFirstRollEquals("$pi", self.my_pi)
+        self.assertFirstRollEquals("$pi + $pi", self.my_pi + self.my_pi)
+
+    def test_interpret_stats(self):
+        self.assertIsNotNone(dice.GLOBAL_MACROS.get_macro_content("$stats"))
+        dice.roll("$stats")
+        dice.roll("{$stats, $stats}[twice, for fun]")
+
 
 if __name__ == "__main__":
     unittest.main()

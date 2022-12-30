@@ -1,12 +1,16 @@
 # Dicerolling.
 # Parser and evaluator for dice roll inputs.
 
+import logging
 import re
 import typing
 from math import ceil, factorial, floor, sqrt, perm
 
 from dice_details import *
 from utils import codeblock, escape
+
+log = logging.getLogger(__name__)
+
 
 KEYWORDS = [
     "P",
@@ -21,9 +25,13 @@ KEYWORDS = [
     "ceil",
 ]
 KEYWORD_PATTERN = "|".join(KEYWORDS)
+MACRO_PATTERN = r"\$[\w]+"
+MACRO_DEPTH_CAP = 10
+
 # fmt: off
 TOKEN_SPEC = [
     ("LABEL",    r"\[.*?\]|#.*"),               # Labels, tags, comments
+    ("MACRO",    MACRO_PATTERN),                # Macros
     ("NUMBER",   r"\d+(\.\d*)?"),               # Integer or decimal number
     ("KEYWORD",  KEYWORD_PATTERN),              # Keywords
     ("DICE",     r"[d]"),                       # Diceroll operators
@@ -61,11 +69,45 @@ ARITHMETICS = {
 }
 
 
-# Tokenizes a formula to symbol instances and divides them into individual rolls.
-def symbolize(symbol_table, intext: str):
-    all_rolls = []
-    current_roll = []
+class MacroData:
+    MACRO_REGEX = re.compile(MACRO_PATTERN)
 
+    def __init__(self) -> None:
+        self.macros: dict[str, str] = {}
+
+    def add_macro(self, name: str, contents: str) -> None:
+        nested = MacroData.MACRO_REGEX.match(contents)
+        if nested:
+            log.warning(f"{name} contains another nested macro {nested.group()}")
+            if nested.group() == name:
+                raise ValueError(f"can't add self-referential macro")
+        if name in self.macros:
+            log.info(f"macro: overwriting {name}: {self.macros[name]} with: {contents}")
+        else:
+            log.info(f"macro: saving {name}: {contents}")
+        self.macros[name] = contents
+
+    def delete_macro(self, name: str) -> None:
+        if name not in self.macros:
+            raise ValueError(f"can't find macro {name} to remove")
+        self.macros.pop(name)
+
+    def get_macro_content(self, name: str):
+        if name in self.macros:
+            return self.macros[name]
+        return None
+
+
+GLOBAL_MACROS = MacroData()
+GLOBAL_MACROS.add_macro("$stats", "repeat(4d6kh3, 6)")
+GLOBAL_MACROS.add_macro("$double", "{$stats, $stats}")
+
+
+# Inner function for symbolize.
+# Returns the all_rolls and current_roll lists with symbols from intext added.
+def _symbolize(
+    symbol_table, intext: str, all_rolls: list = [], current_roll: list = [], depth=0
+):
     for item in TOKEN_PATTERN.finditer(intext):
         # Cut input into tokens.
         # https://docs.python.org/3.6/library/re.html#writing-a-tokenizer
@@ -81,6 +123,23 @@ def symbolize(symbol_table, intext: str):
                 value = int(value)
         elif kind == "DIETYPE":
             value = SpecialDie(value)
+        elif kind == "MACRO":
+            macro = GLOBAL_MACROS.get_macro_content(value)
+            if macro is None:
+                raise RuntimeError(f"Can't find macro {value}")
+            if depth > MACRO_DEPTH_CAP:
+                raise RuntimeError(
+                    f"Exceeded maximum macro depth {MACRO_DEPTH_CAP} with {value}"
+                )
+            all_rolls, current_roll = _symbolize(
+                symbol_table=symbol_table,
+                intext=macro,
+                all_rolls=all_rolls,
+                current_roll=current_roll,
+                depth=depth + 1,
+            )
+            continue
+
         # pass OP, END
         elif kind == "SKIP":
             continue
@@ -110,6 +169,21 @@ def symbolize(symbol_table, intext: str):
         if kind == "END":
             all_rolls.append(current_roll)
             current_roll = []
+
+    return (all_rolls, current_roll)
+
+
+# Tokenizes a formula to symbol instances and divides them into individual rolls.
+def symbolize(symbol_table, intext: str):
+    all_rolls = []
+    current_roll = []
+
+    all_rolls, current_roll = _symbolize(
+        symbol_table=symbol_table,
+        intext=intext,
+        all_rolls=all_rolls,
+        current_roll=current_roll,
+    )
 
     # end the final roll if no explicit END token is found
     if len(current_roll) > 0:
@@ -208,7 +282,7 @@ class Evaluator:
                 if self.detail:
                     return ExprResult.description(self.detail, evaluated, top_level)
                 if not self.contains_raw_value():
-                    print(self._kind)
+                    log.info(f"does not contain raw value: {self._kind}")
                 return str(self)
 
             if self.is_grouping():
