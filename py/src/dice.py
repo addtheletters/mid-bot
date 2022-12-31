@@ -1,12 +1,16 @@
 # Dicerolling.
 # Parser and evaluator for dice roll inputs.
 
+import logging
 import re
 import typing
-from math import ceil, factorial, floor, sqrt, perm
+from math import ceil, factorial, floor, perm, sqrt
 
 from dice_details import *
 from utils import codeblock, escape
+
+log = logging.getLogger(__name__)
+
 
 KEYWORDS = [
     "P",
@@ -21,9 +25,13 @@ KEYWORDS = [
     "ceil",
 ]
 KEYWORD_PATTERN = "|".join(KEYWORDS)
+MACRO_PATTERN = r"\$[\w]+"
+MACRO_DEPTH_CAP = 10
+
 # fmt: off
 TOKEN_SPEC = [
     ("LABEL",    r"\[.*?\]|#.*"),               # Labels, tags, comments
+    ("MACRO",    MACRO_PATTERN),                # Macros
     ("NUMBER",   r"\d+(\.\d*)?"),               # Integer or decimal number
     ("KEYWORD",  KEYWORD_PATTERN),              # Keywords
     ("DICE",     r"[d]"),                       # Diceroll operators
@@ -61,11 +69,62 @@ ARITHMETICS = {
 }
 
 
-# Tokenizes a formula to symbol instances and divides them into individual rolls.
-def symbolize(symbol_table, intext: str):
-    all_rolls = []
-    current_roll = []
+class MacroData:
+    MACRO_REGEX = re.compile(MACRO_PATTERN)
 
+    def __init__(self) -> None:
+        self._macros: dict[str, str] = {}
+
+    # If an existing macro has the name, overwrite it and return its old contents.
+    def add_macro(self, name: str, contents: str) -> str | None:
+        nested = MacroData.MACRO_REGEX.match(contents)
+        if nested:
+            log.warning(f"{name} contains another nested macro {nested.group()}")
+            if nested.group() == ("$" + name):
+                raise ValueError(f"can't add self-referential macro")
+        ret = None
+        if name in self._macros:
+            ret = self._macros[name]
+            log.info(f"macro: overwriting {name}: {ret} with: {contents}")
+        else:
+            log.info(f"macro: saving {name}: {contents}")
+        self._macros[name] = contents
+        return ret
+
+    # Raises ValueError if the named macro doesn't exist.
+    # Returns the deleted macro's contents.
+    def delete_macro(self, name: str) -> str:
+        if name not in self._macros:
+            raise ValueError(f"can't find macro {name} to remove")
+        return self._macros.pop(name)
+
+    def get_macro_content(self, name: str):
+        if name in self._macros:
+            return self._macros[name]
+        return None
+
+    def get_all_macros(self):
+        return self._macros
+
+
+def get_default_macros():
+    md = MacroData()
+    md.add_macro("stats", "repeat(4d6kh3, 6)")
+    md.add_macro("double", "{$stats, $stats}")
+    return md
+
+
+# Inner function for symbolize.
+# Returns the all_rolls and current_roll lists with symbols from intext added.
+# Recursively called for macro expansion.
+def _symbolize(
+    symbol_table,
+    intext: str,
+    macro_data: MacroData,
+    all_rolls: list = [],
+    current_roll: list = [],
+    depth=0,
+):
     for item in TOKEN_PATTERN.finditer(intext):
         # Cut input into tokens.
         # https://docs.python.org/3.6/library/re.html#writing-a-tokenizer
@@ -81,6 +140,25 @@ def symbolize(symbol_table, intext: str):
                 value = int(value)
         elif kind == "DIETYPE":
             value = SpecialDie(value)
+        elif kind == "MACRO":
+            mname = value[1:]
+            macro = macro_data.get_macro_content(mname)
+            if macro is None:
+                raise RuntimeError(f"Can't find macro {mname}")
+            if depth > MACRO_DEPTH_CAP:
+                raise RuntimeError(
+                    f"Exceeded maximum macro depth {MACRO_DEPTH_CAP} with {mname}"
+                )
+            all_rolls, current_roll = _symbolize(
+                symbol_table=symbol_table,
+                intext=macro,
+                macro_data=macro_data,
+                all_rolls=all_rolls,
+                current_roll=current_roll,
+                depth=depth + 1,
+            )
+            continue
+
         # pass OP, END
         elif kind == "SKIP":
             continue
@@ -110,6 +188,22 @@ def symbolize(symbol_table, intext: str):
         if kind == "END":
             all_rolls.append(current_roll)
             current_roll = []
+
+    return (all_rolls, current_roll)
+
+
+# Tokenizes a formula to symbol instances and divides them into individual rolls.
+def symbolize(symbol_table, intext: str, macro_data: MacroData):
+    all_rolls = []
+    current_roll = []
+
+    all_rolls, current_roll = _symbolize(
+        symbol_table=symbol_table,
+        intext=intext,
+        macro_data=macro_data,
+        all_rolls=all_rolls,
+        current_roll=current_roll,
+    )
 
     # end the final roll if no explicit END token is found
     if len(current_roll) > 0:
@@ -208,7 +302,7 @@ class Evaluator:
                 if self.detail:
                     return ExprResult.description(self.detail, evaluated, top_level)
                 if not self.contains_raw_value():
-                    print(self._kind)
+                    log.info(f"does not contain raw value: {self._kind}")
                 return str(self)
 
             if self.is_grouping():
@@ -513,11 +607,15 @@ class Evaluator:
         return ret
 
 
-def roll(formula: str):
+def roll(formula: str, macro_data: MacroData | None = None):
     if len(formula) < 1:
         raise ValueError("Roll formula is empty.")
+
+    if macro_data is None:
+        macro_data = get_default_macros()
+    rolls = symbolize(Evaluator.SYMBOL_TABLE, formula, macro_data)
+
     results = []
-    rolls = symbolize(Evaluator.SYMBOL_TABLE, formula)
     for roll in rolls:
         e = Evaluator(roll)
         results.append(e.evaluate())
@@ -916,10 +1014,11 @@ Evaluator.register_postfix("#", _label_operator, 1)
 Evaluator.register_postfix("[", _label_operator, 15)
 
 if __name__ == "__main__":
+    macro_data = get_default_macros()
     while True:
         intext = input()
         try:
-            symbols = symbolize(Evaluator.SYMBOL_TABLE, intext)
+            symbols = symbolize(Evaluator.SYMBOL_TABLE, intext, macro_data)
             print(symbols)
             results = roll(intext)
             print(format_roll_results(results))
