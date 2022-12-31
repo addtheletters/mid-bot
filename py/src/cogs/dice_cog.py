@@ -25,11 +25,12 @@ class DiceRoller(commands.Cog):
         self.macro_data: dice.MacroData = bot.get_sync_manager().MacroData()
         self.add_default_macros()
         swap_hybrid_command_description(self.roll)
-        swap_hybrid_command_description(self.rollsave)
+        swap_hybrid_command_description(self.macros)
 
     def add_default_macros(self):
         self.macro_data.add_macro("stats", "repeat(4d6kh3, 6)")
         self.macro_data.add_macro("double", "{$stats, $stats}")
+        self.macro_data.add_macro("fireball", "8d6[fire damage]")
 
     @commands.hybrid_command(
         aliases=["r"],
@@ -95,30 +96,43 @@ class DiceRoller(commands.Cog):
             return
         await reply(ctx, f"{error}")
 
-    @commands.hybrid_command(aliases=["rs"], brief="Save a roll macro")
-    async def rollsave(self, ctx: commands.Context, name: str, contents: str):
+    @commands.hybrid_group(
+        aliases=["m"],
+        brief="Modify dice roll macros",
+        description=f"""
+    __**macros**__
+    Assign names to dice roll formulas, saving them as macros.
+    When `$name` appears in a `{get_summon_prefix()}roll` input, it'll be replaced by the macro contents before evaluation.
+    Use these subcommands to modify dice roll macros.
+    """,
+    )
+    async def macros(self, ctx: commands.Context):
+        await reply(ctx, get_help_notice("macros"))
+
+    @macros.command(aliases=["s", "set"], brief="Save a roll macro")
+    async def save(self, ctx: commands.Context, name: str, contents: str):
         old = None
         try:
             old = self.macro_data.add_macro(name=name, contents=contents)
         except ValueError as err:
-            await reply(ctx, f"Error saving macro: {err}")
+            await reply(ctx, f"Error saving macro: `{err}`")
             return
         if old is not None:
-            await reply(ctx, f"Overwrote macro: {name} = ~~{old}~~ ⇒ {contents}")
+            await reply(ctx, f"Overwrote macro: `{name} = {old} ⇒ {contents}`")
         else:
-            await reply(ctx, f"Saved macro: {name} = {contents}")
+            await reply(ctx, f"Saved macro: `{name} = {contents}`")
 
-    @commands.hybrid_command(aliases=["rd"], brief="Delete a roll macro")
-    async def rolldel(self, ctx: commands.Context, name: str):
+    @macros.command(aliases=["d", "del"], brief="Delete a roll macro")
+    async def delete(self, ctx: commands.Context, name: str):
         try:
             contents = self.macro_data.delete_macro(name=name)
-            await reply(ctx, f"Deleted macro: {name} = {contents}")
+            await reply(ctx, f"Deleted macro: `{name} = {contents}`")
         except ValueError as err:
-            await reply(ctx, f"Error deleting macro: {err}")
+            await reply(ctx, f"Error deleting macro: `{err}`")
             return
 
-    @commands.hybrid_command(aliases=["rolllist", "rl"], brief="List all macros")
-    async def macros(self, ctx: commands.Context):
+    @macros.command(aliases=["l", "ls"], brief="List all macros")
+    async def list(self, ctx: commands.Context):
         mlist = [
             f"{name} = {contents}"
             for name, contents in self.macro_data.get_all_macros().items()
