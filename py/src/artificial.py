@@ -1,3 +1,4 @@
+# OpenAI API interfacing.
 import logging
 import os
 

@@ -21,6 +21,7 @@ OAI_DEFAULT_IMAGE_SIZE = "512x512"
 class Intelligence(commands.Cog):
     def __init__(self, bot) -> None:
         swap_hybrid_command_description(self.complete)
+        swap_hybrid_command_description(self.genimage)
         swap_hybrid_command_description(self.parameters)
         artificial.load_openai_key()
         self.completion_params = {
@@ -32,14 +33,29 @@ class Intelligence(commands.Cog):
             "size": OAI_DEFAULT_IMAGE_SIZE,
         }
 
-    @commands.hybrid_command(brief="Generate text from a prompt")
+    @commands.hybrid_command(
+        aliases=["gentext"],
+        brief="Generate text from a prompt",
+        description=f"""
+    __**complete**__
+    Generates text following a prompt. Uses the OpenAI API completion endpoint (GPT-3).
+    Use {get_summon_prefix()}parameters to check the configuration.
+    """,
+    )
     async def complete(self, ctx: commands.Context, prompt: str):
         async with ctx.typing():
             response = openai.Completion.create(prompt=prompt, **self.completion_params)
         text: str = response.choices[0].text  # type: ignore
         await reply(ctx, prompt + "\n" + codeblock(text, big=True))
 
-    @commands.hybrid_command(brief="Generate an image from a prompt")
+    @commands.hybrid_command(
+        brief="Generate an image from a prompt",
+        description=f"""
+    __**genimage**__
+    Generates an image based on a text prompt. Uses the OpenAI API image endpoint (DALL-E).
+    Use {get_summon_prefix()}parameters to check the configuration.
+    """,
+    )
     async def genimage(self, ctx: commands.Context, prompt: str):
         async with ctx.typing():
             response = openai.Image.create(prompt=prompt, **self.genimage_params)
@@ -51,7 +67,12 @@ class Intelligence(commands.Cog):
             ),
         )
 
-    @commands.hybrid_command(brief="View AI generation parameters")
+    @commands.hybrid_command(
+        brief="View AI generation parameters",
+        description=f"""
+    __**parameters**__
+    Show the parameters used by the AI generator commands.""",
+    )
     async def parameters(self, ctx: commands.Context):
         output = (
             "Completion: "
