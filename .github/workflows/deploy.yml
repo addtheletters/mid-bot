@@ -53,10 +53,15 @@ jobs:
             cd mid-bot
             pip install -r requirements.txt
           "
-      - name: Set DISCORD_TOKEN
+      - name: Set environment variables
         env:
             DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
-        run: ssh deployment "echo 'DISCORD_TOKEN=$DISCORD_TOKEN' > ~/mid-bot/.env"
+            OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          ssh deployment "
+            echo -e 'DISCORD_TOKEN=$DISCORD_TOKEN\n'\
+            'OPENAI_API_KEY=$OPENAI_API_KEY' > ~/mid-bot/.env
+          "
       - name: Run bot
         env:
             SESSION: ${{ secrets.TMUX_SESSION_NAME }}
