@@ -16,3 +16,4 @@ This bot relies on:
 - [Pebble](https://pypi.org/project/Pebble/)
 - [dateparser](https://dateparser.readthedocs.io/en/latest/)
 - [aiohttp](https://docs.aiohttp.org/en/stable/)
+- [OpenAI](https://github.com/openai/openai-python)

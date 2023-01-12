@@ -32,16 +32,6 @@ SRA_ANIMALS = [
 ]
 
 
-def image_embed(
-    title: str, img_url: str, link: str | None = None, footer_text: str | None = None
-) -> discord.Embed:
-    return (
-        discord.Embed(title=title, url=link if link else img_url)
-        .set_image(url=img_url)
-        .set_footer(text=footer_text)
-    )
-
-
 def bad_status(status: int):
     return status < 200 or status > 299
 

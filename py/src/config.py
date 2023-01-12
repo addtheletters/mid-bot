@@ -1,6 +1,7 @@
 # Configuration and constants.
 
 # DISCORD_TOKEN # is expected in the environment
+# OPENAI_API_KEY # is expected in the environment
 # TEST_GUILD_ID # can be provided in the environment
 # SUMMON_PREFIX # can be provided in the environment
 

@@ -40,6 +40,11 @@ async def send_safe(
             + f" ... (message too long, truncated {cutoff} characters.)"
         )
     if isinstance(ctx, commands.Context):
+        # Send as followup if deferred interaction
+        if ctx.interaction and ctx.interaction.response.is_done():
+            if payload is None:
+                payload = ""
+            return await ctx.interaction.followup.send(payload, **kwargs)
         return await ctx.reply(payload, **kwargs)
     else:
         return await ctx.send(payload, **kwargs)
@@ -99,3 +104,14 @@ def ignorable_check_failure(exception):
         log.warn(exception)
         return True
     return False
+
+
+# Create an embed featuring a linked image.
+def image_embed(
+    title: str, img_url: str, link: str | None = None, footer_text: str | None = None
+) -> discord.Embed:
+    return (
+        discord.Embed(title=title, url=link if link else img_url)
+        .set_image(url=img_url)
+        .set_footer(text=footer_text)
+    )
