@@ -7,6 +7,7 @@ from typing import Optional
 import cmds
 import discord
 from bongo import bongo
+from cogs.artificial_cog import Intelligence
 from cogs.cards_cog import Cards, CardsData
 from cogs.deafen_cog import Deafener
 from cogs.dice_cog import DiceRoller
@@ -106,7 +107,7 @@ async def help_app_command(interaction: discord.Interaction, command: Optional[s
 # Bot client holding a pool of workers for running commands and a shared data manager.
 class MidClient(commands.Bot):
     misc_commands = [cmds.echo, cmds.shrug, cmds.eject, bongo]
-    misc_cogs = [Cards, Deafener, DiceRoller, Reminder]
+    misc_cogs = [Intelligence, Cards, Deafener, DiceRoller, Reminder]
     managed_types: dict = {"CardsData": CardsData, "MacroData": MacroData}
 
     def __init__(self):
