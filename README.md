@@ -7,6 +7,7 @@ New published releases are automatically deployed to an OCP instance by a Github
 Run the bot locally:
 - Install the dependencies listed in `requirements.txt`. (`pip install -r requirements.txt`)
 - Set environment variable `DISCORD_TOKEN` to your bot API token. A `.env` file with the line `DISCORD_TOKEN=your.token.here` will work.
+- If you want to use the OpenAI commands, provide an OpenAI API key as environment variable `OPENAI_API_KEY`.
 - Run `./run_bot.sh`.
 
 This bot relies on:
