@@ -29,12 +29,12 @@ class DiceRoller(BaseCog):
         super().__init__(bot)
         self.macro_data: dice.MacroData = bot.get_sync_manager().MacroData()  # type: ignore
 
+        swap_hybrid_command_description(self.roll)
+        swap_hybrid_command_description(self.macros)
+
         self.add_default_macros()
         self.load_stored_macros()
         self.update_storage()
-
-        swap_hybrid_command_description(self.roll)
-        swap_hybrid_command_description(self.macros)
 
     def add_default_macros(self):
         self.macro_data.add_macro("stats", "repeat(4d6kh3, 6)")
@@ -49,8 +49,6 @@ class DiceRoller(BaseCog):
             for n, c in loaded.items():
                 self.macro_data.add_macro(n, c)
                 log.info(f"Loaded macro {n} = {c}")
-        except OSError as e:
-            log.error(f"Failed to load from storage.", e, exc_info=True)
         except KeyError as e:
             log.error(f"No macro data found in storage.", e)
 

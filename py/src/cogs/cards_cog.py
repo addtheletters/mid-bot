@@ -12,10 +12,31 @@ log = logging.getLogger(__name__)
 
 
 class Cards(BaseCog):
+    CARD_DECK_KEY = "card_deck"
+    CARD_LOGS_KEY = "card_logs"
+
     def __init__(self, bot):
         super().__init__(bot)
         self.data: cards.CardsData = bot.get_sync_manager().CardsData()  # type: ignore
+
+        self.load_from_storage()
+        self.update_storage()
+
         swap_hybrid_command_description(self.deck)
+
+    def load_from_storage(self):
+        try:
+            deck = self.bot.get_storage().get(Cards.CARD_DECK_KEY)
+            self.data.set_card_deck(deck)
+            logs = self.bot.get_storage().get(Cards.CARD_LOGS_KEY)
+            self.data.set_card_logs(logs)
+            log.info("Loaded card deck and logs from storage.")
+        except KeyError as e:
+            log.error(f"No card data found in storage.", e)
+
+    def update_storage(self):
+        self.bot.get_storage().set(Cards.CARD_DECK_KEY, self.data.get_card_deck())
+        self.bot.get_storage().set(Cards.CARD_LOGS_KEY, self.data.get_card_logs())
 
     def add_history_log(self, ctx: commands.Context, reply: str) -> str:
         card_log = f"{ctx.author.name} [{ctx.command.name}]: {reply if ctx.command.name != 'history' else 'viewed history.'}"  # type: ignore
@@ -27,6 +48,7 @@ class Cards(BaseCog):
     ):
         output = await as_subprocess_command(ctx, card_op, self.data, *args, **kwargs)
         self.add_history_log(ctx, output)
+        self.update_storage()
         await reply(ctx, output)
 
     @commands.hybrid_group(

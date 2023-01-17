@@ -28,6 +28,9 @@ class CardsData:
     def get_card_logs(self):
         return self.card_logs
 
+    def set_card_logs(self, logs):
+        self.card_logs = logs
+
     def clear_card_logs(self):
         self.card_logs = []
 

@@ -30,15 +30,21 @@ class Storage:
         self.load()
 
     def load(self):
-        self.fields = {}
-        with shelve.open(self.filename) as db:
-            for key in db.keys():
-                self.fields[key] = db[key]
+        try:
+            with shelve.open(self.filename) as db:
+                self.fields = {}
+                for key in db.keys():
+                    self.fields[key] = db[key]
+        except OSError as e:
+            log.error(f"Failed to load from storage.", e, exc_info=True)
 
     def save(self):
-        with shelve.open(self.filename) as db:
-            for key in self.fields.keys():
-                db[key] = self.fields[key]
+        try:
+            with shelve.open(self.filename) as db:
+                for key in self.fields.keys():
+                    db[key] = self.fields[key]
+        except OSError as e:
+            log.error(f"Failed to save data to storage.", e, exc_info=True)
 
     def set(self, key: str, data):
         self.fields[key] = data
