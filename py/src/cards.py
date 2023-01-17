@@ -13,6 +13,28 @@ JOKER_NUMBER = 15
 JOKER_NUMBER_CHAR = "joker"
 
 
+# Data for card deck, intended to be synchronized via a sync manager
+class CardsData:
+    def __init__(self):
+        self.card_deck = shuffle(build_deck_52())
+        self.card_logs = []
+
+    def get_card_deck(self):
+        return self.card_deck
+
+    def set_card_deck(self, deck):
+        self.card_deck = deck
+
+    def get_card_logs(self):
+        return self.card_logs
+
+    def clear_card_logs(self):
+        self.card_logs = []
+
+    def add_card_log(self, message):
+        self.card_logs.append(message)
+
+
 @total_ordering
 class Card(namedtuple("CardId", ["n", "s"])):
     NUMBERS = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"]

@@ -4,37 +4,17 @@ import typing
 
 import cards
 from cmds import as_subprocess_command, swap_hybrid_command_description
+from cogs.base_cog import BaseCog
 from discord.ext import commands
 from utils import *
 
 log = logging.getLogger(__name__)
 
 
-# Data for card deck, intended to be synchronized via a sync manager
-class CardsData:
-    def __init__(self):
-        self.card_deck = cards.shuffle(cards.build_deck_52())
-        self.card_logs = []
-
-    def get_card_deck(self):
-        return self.card_deck
-
-    def set_card_deck(self, deck):
-        self.card_deck = deck
-
-    def get_card_logs(self):
-        return self.card_logs
-
-    def clear_card_logs(self):
-        self.card_logs = []
-
-    def add_card_log(self, message):
-        self.card_logs.append(message)
-
-
-class Cards(commands.Cog):
+class Cards(BaseCog):
     def __init__(self, bot):
-        self.data: CardsData = bot.get_sync_manager().CardsData()
+        super().__init__(bot)
+        self.data: cards.CardsData = bot.get_sync_manager().CardsData()  # type: ignore
         swap_hybrid_command_description(self.deck)
 
     def add_history_log(self, ctx: commands.Context, reply: str) -> str:
@@ -104,33 +84,33 @@ class Cards(commands.Cog):
         await self.as_card_operation(ctx, _history, count)
 
 
-def _draw(card_data: CardsData, count: int) -> str:
+def _draw(card_data: cards.CardsData, count: int) -> str:
     cdeck = card_data.get_card_deck()
     drawn = cards.draw(cdeck, count)
     card_data.set_card_deck(cdeck)
     return str(drawn)
 
 
-def _reset(card_data: CardsData) -> str:
+def _reset(card_data: cards.CardsData) -> str:
     cdeck = cards.shuffle(cards.build_deck_52())
     card_data.set_card_deck(cdeck)
     return "Deck reset and shuffled."
 
 
-def _shuffle(card_data: CardsData) -> str:
+def _shuffle(card_data: cards.CardsData) -> str:
     cdeck = cards.shuffle(card_data.get_card_deck())
     card_data.set_card_deck(cdeck)
     return "Deck shuffled."
 
 
-def _inspect(card_data: CardsData) -> str:
+def _inspect(card_data: cards.CardsData) -> str:
     cdeck = card_data.get_card_deck()
     top = cdeck[len(cdeck) - 1] if len(cdeck) > 0 else None
     bot = cdeck[0] if len(cdeck) > 0 else None
     return f"{len(cdeck)} cards in deck. Top card is {top}. Bottom card is {bot}."
 
 
-def _history(card_data: CardsData, count: int) -> str:
+def _history(card_data: cards.CardsData, count: int) -> str:
     history = card_data.get_card_logs()
     numbered = [f"{i+1}: {history[i]}" for i in range(len(history))][-count:]
     output = "\n".join(numbered)

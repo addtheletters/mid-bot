@@ -3,6 +3,7 @@ import logging
 
 import dice
 from cmds import as_subprocess_command, swap_hybrid_command_description
+from cogs.base_cog import BaseCog
 from discord.ext import commands
 from utils import *
 
@@ -20,9 +21,10 @@ def _roll(formula: str, macro_data: dice.MacroData) -> str:
     return output
 
 
-class DiceRoller(commands.Cog):
+class DiceRoller(BaseCog):
     def __init__(self, bot) -> None:
-        self.macro_data: dice.MacroData = bot.get_sync_manager().MacroData()
+        super().__init__(bot)
+        self.macro_data: dice.MacroData = bot.get_sync_manager().MacroData()  # type: ignore
         self.add_default_macros()
         swap_hybrid_command_description(self.roll)
         swap_hybrid_command_description(self.macros)

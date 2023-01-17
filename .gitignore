@@ -3,3 +3,8 @@
 
 # vscode workspace settings
 .vscode
+
+# data storage
+*.bak
+*.dat
+*.dir

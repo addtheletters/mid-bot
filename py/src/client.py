@@ -1,17 +1,13 @@
 # A bot client with some basic custom skills.
 import logging
 import os
+import shelve
 from multiprocessing.managers import SyncManager
 from typing import Optional
 
 import cmds
 import discord
-from bongo import bongo
-from cogs.artificial_cog import Intelligence
-from cogs.cards_cog import Cards, CardsData
-from cogs.deafen_cog import Deafener
-from cogs.dice_cog import DiceRoller
-from cogs.remind_cog import Reminder
+from cards import CardsData
 from config import *
 from dice import MacroData
 from discord.ext import commands
@@ -24,6 +20,31 @@ logging.basicConfig(level=logging.INFO)
 class DataManager(SyncManager):
     def __init__(self):
         SyncManager.__init__(self)
+
+
+# Interface for periodically shelving some data
+class Storage:
+    def __init__(self, filename: str) -> None:
+        self.filename = filename
+        self.fields = {}
+        self.load()
+
+    def load(self):
+        self.fields = {}
+        with shelve.open(self.filename) as db:
+            for key in db.keys():
+                self.fields[key] = db[key]
+
+    def save(self):
+        with shelve.open(self.filename) as db:
+            for key in self.fields.keys():
+                db[key] = self.fields[key]
+
+    def set(self, key: str, data):
+        self.fields[key] = data
+
+    def get(self, key: str):
+        return self.fields[key]
 
 
 class MidHelpCommand(commands.DefaultHelpCommand):
@@ -106,11 +127,9 @@ async def help_app_command(interaction: discord.Interaction, command: Optional[s
 
 # Bot client holding a pool of workers for running commands and a shared data manager.
 class MidClient(commands.Bot):
-    misc_commands = [cmds.echo, cmds.shrug, cmds.eject, bongo]
-    misc_cogs = [Intelligence, Cards, Deafener, DiceRoller, Reminder]
     managed_types: dict = {"CardsData": CardsData, "MacroData": MacroData}
 
-    def __init__(self):
+    def __init__(self, misc_commands, misc_cogs):
         commands.Bot.__init__(
             self,
             command_prefix=commands.when_mentioned_or(get_summon_prefix()),
@@ -118,9 +137,14 @@ class MidClient(commands.Bot):
             intents=get_intents(),
             help_command=MidHelpCommand(),
         )
+        self.description = config.BOT_DESCRIPTION
+
+        self.misc_commands = misc_commands
+        self.misc_cogs = misc_cogs
+
         self.executor = cmds.PebbleExecutor(MAX_COMMAND_WORKERS, COMMAND_TIMEOUT)
         self.sync_manager = None
-        self.description = config.BOT_DESCRIPTION
+        self.storage = Storage(LOCAL_STORAGE_FILENAME)
 
     def get_sync_manager(self) -> DataManager:
         if self.sync_manager is None:
@@ -129,6 +153,9 @@ class MidClient(commands.Bot):
 
     def get_executor(self) -> cmds.PebbleExecutor:
         return self.executor
+
+    def get_storage(self) -> Storage:
+        return self.storage
 
     async def setup_hook(self) -> None:
         await super().setup_hook()
@@ -192,8 +219,8 @@ class MidClient(commands.Bot):
     async def register_commands(self):
         self.tree.add_command(help_app_command)
 
-        for cmd in MidClient.misc_commands:
+        for cmd in self.misc_commands:
             cmds.swap_hybrid_command_description(cmd)
             self.add_command(cmd)
-        for cog in MidClient.misc_cogs:
+        for cog in self.misc_cogs:
             await self.add_cog(cog(self))

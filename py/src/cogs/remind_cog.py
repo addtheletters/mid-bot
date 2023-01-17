@@ -8,6 +8,7 @@ import config
 import dateparser
 import discord
 from cmds import swap_hybrid_command_description
+from cogs.base_cog import BaseCog
 from discord.ext import commands, tasks
 from utils import *
 
@@ -81,9 +82,9 @@ def contains_am_or_pm(timestr: str):
     return timestr.find("AM") >= 0 or timestr.find("PM") >= 0
 
 
-class Reminder(commands.Cog):
+class Reminder(BaseCog):
     def __init__(self, bot) -> None:
-        self.bot: commands.Bot = bot
+        super().__init__(bot)
         self.reminders: dict[int, RemindEntry] = {}
         self.next_id: int = 1
 
