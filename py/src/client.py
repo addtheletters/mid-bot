@@ -10,7 +10,7 @@ import discord
 from cards import CardsData
 from config import *
 from dice import MacroData
-from discord.ext import commands
+from discord.ext import commands, tasks
 from utils import *
 
 log = logging.getLogger(__name__)
@@ -157,6 +157,11 @@ class MidClient(commands.Bot):
     def get_storage(self) -> Storage:
         return self.storage
 
+    @tasks.loop(seconds=STORAGE_SAVE_INTERVAL)
+    async def save_storage(self):
+        self.get_storage().save()
+        log.info("Saved bot data to local storage.")
+
     async def setup_hook(self) -> None:
         await super().setup_hook()
         await self.register_commands()
@@ -190,9 +195,7 @@ class MidClient(commands.Bot):
         await self.login(token)
         await self.connect(reconnect=reconnect)
 
-        self.executor.shutdown(False)
-        if self.sync_manager != None:
-            self.sync_manager.shutdown()
+        self.shutdown_manager()
 
     def setup_manager(self):
         if self.sync_manager != None:
@@ -204,6 +207,15 @@ class MidClient(commands.Bot):
         self.sync_manager = DataManager()
         self.sync_manager.start()
         log.info("Sync manager started.")
+        self.save_storage.start()  # also start periodic save-to-disk task
+
+    def shutdown_manager(self):
+        self.executor.shutdown(False)
+        if self.sync_manager != None:
+            self.sync_manager.shutdown()
+        log.info("Sync manager shut down.")
+        self.save_storage.cancel()  # stop periodic save-to-disk task
+        self.get_storage().save()
 
     async def on_ready(self):
         log.info(
