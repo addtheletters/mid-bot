@@ -18,7 +18,6 @@ CHECK_INTERVAL_SECONDS = 15
 
 REMIND_BUTTON_TEXT_ADD = "Remind me too!"
 REMIND_BUTTON_TEXT_REMOVE = "Don't remind me."
-REMIND_TARGET_SEPARATOR = " ⇒ "
 
 DEFAULT_TIMEZONE = ZoneInfo(config.DEFAULT_TIMEZONE_NAME)
 
@@ -26,28 +25,105 @@ DEFAULT_TIMEZONE = ZoneInfo(config.DEFAULT_TIMEZONE_NAME)
 class RemindEntry:
     def __init__(
         self,
-        context: commands.Context,
-        message: str,
+        text: str,
         time: datetime,
+        context: commands.Context,
         targets: list[discord.User | discord.Member],
         reply: discord.Message | None = None,
     ) -> None:
-        self.context = context
-        self.message = message
+        self.text = text
         self.time = time
-        self.targets = targets
-        self.reply = reply
+        self.target_ids = [t.id for t in targets]
+        self.author_id = context.author.id
+        self.channel_id = context.channel.id
+        self.request_id = context.message.id
+        if context.interaction:
+            self.interaction = True
+        else:
+            self.interaction = False
+
+        self.response_id = reply.id if reply else None
+
+        self._request = context.message
+        self._context = context
 
     def __repr__(self) -> str:
-        return f"At {short_format_time(self.time)} for {','.join((u.name for u in self.targets))}: {self.message}"
+        return f"Reminder at {short_format_time(self.time)} for {','.join(str(tid) for tid in self.target_ids)}: {self.text}"
 
-    async def send(self):
-        reminders = self.target_mentions()
-        decorated = reminders + "\nReminder: " + self.message
-        if isinstance(self.context, commands.Context):
-            await reply(self.context, decorated)
-        else:
-            await send_safe(self.context, decorated)
+    def __getstate__(self):
+        # Exclude deep discord objects from pickling
+        state = self.__dict__.copy()
+        if "_request" in state:
+            state["_request"] = None
+        if "_context" in state:
+            state["_context"] = None
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        if "_request" not in state:
+            log.info("Restoring request none state")
+            self._request = None
+        if "_context" not in state:
+            log.info("Restoring context none state")
+            self._context = None
+
+    async def describe(self, bot: commands.Bot) -> str:
+        targets = (u.name for u in await self.get_targets(bot))
+        return f"At {short_format_time(self.time)} for {','.join(targets)}: {self.text}"
+
+    def get_request(self, bot: commands.Bot) -> discord.PartialMessage:
+        if self._request is None:
+            self._request = discord.PartialMessage(
+                channel=bot.get_partial_messageable(self.channel_id), id=self.request_id
+            )
+        return self._request
+
+    async def get_context(self, bot: commands.Bot) -> commands.Context:
+        if self._context is None:
+            log.info(
+                f"channel id: {self.channel_id}, req message id: {self.request_id}"
+            )
+            c = bot.get_partial_messageable(self.channel_id)
+            if c is None:
+                c = await bot.fetch_channel(self.channel_id)
+            if not isinstance(c, discord.abc.Messageable):
+                raise RuntimeError(
+                    f"Failed to get context (reminder is not in a text channel). {self}"
+                )
+            m = None
+            if self.interaction:
+                if self.response_id:
+                    m = await c.fetch_message(self.response_id)
+                else:
+                    raise RuntimeError(
+                        f"Can't find message corresponding to reminder interaction. {self}"
+                    )
+            else:
+                m = await c.fetch_message(self.request_id)
+            self._context = await bot.get_context(m)
+        return self._context
+
+    async def get_targets(self, bot: commands.Bot) -> list[discord.User]:
+        users = []
+        for tid in self.target_ids:
+            u = bot.get_user(tid)
+            if u is None:
+                u = await bot.fetch_user(tid)
+            users.append(u)
+        return users
+
+    def get_response(self, bot: commands.Bot) -> discord.PartialMessage | None:
+        if self.response_id is None:
+            return None
+        return discord.PartialMessage(
+            channel=bot.get_partial_messageable(self.channel_id), id=self.response_id
+        )
+
+    async def send(self, bot: commands.Bot):
+        reminders = await self.target_mentions(bot)
+        decorated = reminders + "\nReminder: " + self.text
+        await reply(await self.get_context(bot), decorated)
 
     def should_send(self):
         return self.time < (
@@ -55,22 +131,17 @@ class RemindEntry:
             + timedelta(seconds=CHECK_INTERVAL_SECONDS)
         )
 
-    def get_targets(self):
-        return self.targets
-
-    def target_mentions(self):
-        return " ".join((usr.mention for usr in self.targets))
+    async def target_mentions(self, bot: commands.Bot):
+        return " ".join((usr.mention for usr in await self.get_targets(bot)))
 
     def was_authored_by(self, user: discord.User | discord.Member) -> bool:
-        return (
-            isinstance(self.context, commands.Context) and self.context.author is user
-        )
+        return self.author_id is user.id
 
     def is_user_involved(self, user: discord.User | discord.Member) -> bool:
-        return self.was_authored_by(user) or (user in self.get_targets())
+        return self.was_authored_by(user) or (user.id in self.target_ids)
 
-    def delta_from_creation(self) -> timedelta:
-        return self.time - self.context.message.created_at.replace(microsecond=0)
+    def delta_from_creation(self, bot: commands.Bot) -> timedelta:
+        return self.time - self.get_request(bot).created_at.replace(microsecond=0)
 
 
 def short_format_time(time: datetime):
@@ -82,7 +153,17 @@ def contains_am_or_pm(timestr: str):
     return timestr.find("AM") >= 0 or timestr.find("PM") >= 0
 
 
+def too_far_in_past(time: datetime):
+    return time < (
+        datetime.now(tz=time.tzinfo) - timedelta(seconds=CHECK_INTERVAL_SECONDS)
+    )
+
+
 class Reminder(BaseCog):
+
+    REMINDER_STORAGE_KEY = "remind"
+    REMINDER_COUNTER_STORAGE_KEY = "remind_count"
+
     def __init__(self, bot) -> None:
         super().__init__(bot)
         self.reminders: dict[int, RemindEntry] = {}
@@ -91,6 +172,8 @@ class Reminder(BaseCog):
         swap_hybrid_command_description(self.remind)
         swap_hybrid_command_description(self.remlist)
         swap_hybrid_command_description(self.remcancel)
+
+        self.load_stored_reminders()
         self.reminder_loop.start()
 
     def cog_unload(self) -> None:
@@ -101,39 +184,63 @@ class Reminder(BaseCog):
         done = []
         for id, entry in self.reminders.items():
             if entry.should_send():
-                await entry.send()
-                if entry.reply:
-                    await entry.reply.edit(
+                await entry.send(self.bot)
+                response = entry.get_response(self.bot)
+                if response:
+                    await response.edit(
                         content=self.reminder_set_message(id), view=None
                     )
                 done.append(id)
         for id in done:
             self.cancel(id)
 
+    @reminder_loop.before_loop
+    async def bot_wait_reminder_loop(self):
+        await self.bot.wait_until_ready()
+
+    def load_stored_reminders(self):
+        try:
+            self.reminders = self.bot.get_storage().get(Reminder.REMINDER_STORAGE_KEY)
+            self.next_id = self.bot.get_storage().get(
+                Reminder.REMINDER_COUNTER_STORAGE_KEY
+            )
+        except KeyError as e:
+            log.error(f"No reminder data found in storage.", e)
+
+    def update_storage(self):
+        self.bot.get_storage().set(Reminder.REMINDER_STORAGE_KEY, self.reminders)
+        self.bot.get_storage().set(Reminder.REMINDER_COUNTER_STORAGE_KEY, self.next_id)
+
     def add_to_reminder(
         self, entry_id: int, user: discord.User | discord.Member
     ) -> None:
         if entry_id not in self.reminders:
             raise ValueError(f"The specified reminder isn't valid (#{entry_id}).")
-        if user in self.reminders[entry_id].get_targets():
+        if user.id in self.reminders[entry_id].target_ids:
             raise ValueError(f"Already included in the reminder.")
-        self.reminders[entry_id].targets.append(user)
+        self.reminders[entry_id].target_ids.append(user.id)
 
     def remove_from_reminder(
         self, entry_id: int, user: discord.User | discord.Member
     ) -> None:
         if entry_id not in self.reminders:
             raise ValueError(f"The specified reminder isn't valid (#{entry_id}).")
-        self.reminders[entry_id].targets.remove(user)
+        self.reminders[entry_id].target_ids.remove(user.id)
 
     def reminder_set_message(self, entry_id: int):
         if entry_id not in self.reminders:
             return f"Reminder #{entry_id} not found."
         entry = self.reminders[entry_id]
-        return f"Reminder #{entry_id} set for {short_format_time(entry.time)}. (in {entry.delta_from_creation()})"
+        return f"Reminder #{entry_id} set for {short_format_time(entry.time)}. (in {entry.delta_from_creation(self.bot)})"
+
+    def _add_reminder(self, entry_id: int, entry: RemindEntry):
+        self.reminders[entry_id] = entry
+        self.update_storage()
 
     def cancel(self, entry_id: int):
-        return self.reminders.pop(entry_id)
+        cancelled = self.reminders.pop(entry_id)
+        self.update_storage()
+        return cancelled
 
     def build_parse_settings_future(self):
         return {
@@ -147,9 +254,6 @@ class Reminder(BaseCog):
             "PREFER_DAY_OF_MONTH": "first",
             "TIMEZONE": config.DEFAULT_TIMEZONE_NAME,
         }
-
-    def too_far_in_past(self, time: datetime):
-        return time < (datetime.now(tz=time.tzinfo) - timedelta(minutes=1))
 
     @commands.hybrid_command(
         aliases=["rem"],
@@ -189,7 +293,7 @@ class Reminder(BaseCog):
                     closer_time = closer_time.replace(tzinfo=DEFAULT_TIMEZONE)
                 # sensibly override AM/PM if it seems off (in the past)
                 if (
-                    self.too_far_in_past(closer_time)
+                    too_far_in_past(closer_time)
                     and closer_time.hour < 12
                     and not contains_am_or_pm(time)
                 ):
@@ -200,14 +304,14 @@ class Reminder(BaseCog):
         if (
             time_ambiguous
             and closer_time is not None
-            and not self.too_far_in_past(closer_time)
+            and not too_far_in_past(closer_time)
             and closer_time < parsed_time
         ):
             parsed_time = closer_time
             detail_message += f" (assuming today rather than tomorrow)"
 
         # fail if more than 1 minute in the past
-        if self.too_far_in_past(parsed_time):
+        if too_far_in_past(parsed_time):
             await reply(
                 ctx,
                 f"Time ({short_format_time(parsed_time)}) is in the past!"
@@ -217,14 +321,17 @@ class Reminder(BaseCog):
 
         log.info(f"setting reminder for time: {short_format_time(parsed_time)}")
         parsed_time = parsed_time.replace(microsecond=0)
-        self.reminders[entry_id] = RemindEntry(
-            context=ctx, message=text, time=parsed_time, targets=[ctx.author]
+        entry = RemindEntry(
+            text=text, time=parsed_time, context=ctx, targets=[ctx.author]
         )
-        self.reminders[entry_id].reply = await reply(
+        self._add_reminder(entry_id, entry)
+        response = await reply(
             ctx,
             f"{self.reminder_set_message(entry_id)}{detail_message}",
             view=ReminderView(self, entry_id),
         )
+        if response:
+            entry.response_id = response.id
 
     @remind.error
     async def remind_error(self, ctx: commands.Context, error):
@@ -246,7 +353,7 @@ class Reminder(BaseCog):
         to_join = []
         for id, entry in self.reminders.items():
             if entry.is_user_involved(ctx.author):
-                to_join.append(f"#{id}: {entry}")
+                to_join.append(f"#{id}: {await entry.describe(self.bot)}")
         if len(to_join) == 0:
             await reply(ctx, "You have no pending reminders.")
         else:
@@ -269,7 +376,7 @@ class Reminder(BaseCog):
                 await reply(ctx, "You aren't involved in this reminder.")
                 return
             re = self.cancel(id)
-            await reply(ctx, f"Cancelled reminder: {re}")
+            await reply(ctx, f"Cancelled reminder: {await re.describe(self.bot)}")
         else:
             pending = []
             for id, entry in self.reminders.items():
@@ -285,8 +392,9 @@ class Reminder(BaseCog):
                 )
                 return
             re = self.cancel(pending[0])
-            if re.reply:
-                await re.reply.edit(content="Reminder cancelled.", view=None)
+            response = re.get_response(self.bot)
+            if response:
+                await response.edit(content="Reminder cancelled.", view=None)
             await reply(ctx, f"Cancelled reminder: {re}")
 
 
@@ -296,7 +404,11 @@ class ReminderView(discord.ui.View):
         self.entry_id = entry_id
         super().__init__(timeout=None)
 
-    @discord.ui.button(label=REMIND_BUTTON_TEXT_ADD, style=discord.ButtonStyle.blurple)
+    @discord.ui.button(
+        label=REMIND_BUTTON_TEXT_ADD,
+        style=discord.ButtonStyle.blurple,
+        custom_id="reminder_view:me_too",
+    )
     async def me_too_pressed(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
@@ -311,12 +423,14 @@ class ReminderView(discord.ui.View):
         content = (
             self.rcog.reminder_set_message(self.entry_id)
             + " "
-            + self.rcog.reminders[self.entry_id].target_mentions()
+            + await self.rcog.reminders[self.entry_id].target_mentions(self.rcog.bot)
         )
         await interaction.response.edit_message(content=content, view=self)
 
     @discord.ui.button(
-        label=REMIND_BUTTON_TEXT_REMOVE, style=discord.ButtonStyle.blurple
+        label=REMIND_BUTTON_TEXT_REMOVE,
+        style=discord.ButtonStyle.blurple,
+        custom_id="reminder_view:remove_me",
     )
     async def remove_me_pressed(
         self, interaction: discord.Interaction, button: discord.ui.Button
@@ -331,7 +445,7 @@ class ReminderView(discord.ui.View):
             )
             return
 
-        if len(self.rcog.reminders[self.entry_id].get_targets()) == 0:
+        if len(self.rcog.reminders[self.entry_id].target_ids) == 0:
             # cancel the reminder if there are no targets remaining
             self.rcog.cancel(self.entry_id)
             await interaction.response.edit_message(
@@ -342,6 +456,6 @@ class ReminderView(discord.ui.View):
         content = (
             self.rcog.reminder_set_message(self.entry_id)
             + " "
-            + self.rcog.reminders[self.entry_id].target_mentions()
+            + await self.rcog.reminders[self.entry_id].target_mentions(self.rcog.bot)
         )
         await interaction.response.edit_message(content=content, view=self)

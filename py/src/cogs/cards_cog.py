@@ -20,7 +20,6 @@ class Cards(BaseCog):
         self.data: cards.CardsData = bot.get_sync_manager().CardsData()  # type: ignore
 
         self.load_from_storage()
-        self.update_storage()
 
         swap_hybrid_command_description(self.deck)
 
@@ -32,7 +31,7 @@ class Cards(BaseCog):
             self.data.set_card_logs(logs)
             log.info("Loaded card deck and logs from storage.")
         except KeyError as e:
-            log.error(f"No card data found in storage.", e)
+            log.error(f"No card data found in storage.")
 
     def update_storage(self):
         self.bot.get_storage().set(Cards.CARD_DECK_KEY, self.data.get_card_deck())

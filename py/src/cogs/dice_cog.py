@@ -34,7 +34,6 @@ class DiceRoller(BaseCog):
 
         self.add_default_macros()
         self.load_stored_macros()
-        self.update_storage()
 
     def add_default_macros(self):
         self.macro_data.add_macro("stats", "repeat(4d6kh3, 6)")
@@ -50,7 +49,7 @@ class DiceRoller(BaseCog):
                 self.macro_data.add_macro(n, c)
                 log.info(f"Loaded macro {n} = {c}")
         except KeyError as e:
-            log.error(f"No macro data found in storage.", e)
+            log.error(f"No macro data found in storage.")
 
     def update_storage(self):
         self.bot.get_storage().set(
