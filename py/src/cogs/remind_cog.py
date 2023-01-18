@@ -19,6 +19,9 @@ CHECK_INTERVAL_SECONDS = 15
 REMIND_BUTTON_TEXT_ADD = "Remind me too!"
 REMIND_BUTTON_TEXT_REMOVE = "Don't remind me."
 
+REMIND_BUTTON_ID_ADD = "reminder_view:me_too"
+REMIND_BUTTON_ID_REMOVE = "reminder_view:remove_me"
+
 DEFAULT_TIMEZONE = ZoneInfo(config.DEFAULT_TIMEZONE_NAME)
 
 
@@ -41,9 +44,9 @@ class RemindEntry:
             self.interaction = True
         else:
             self.interaction = False
-
         self.response_id = reply.id if reply else None
 
+        # cache-like, these won't change once fetched
         self._request = context.message
         self._context = context
 
@@ -109,7 +112,10 @@ class RemindEntry:
         for tid in self.target_ids:
             u = bot.get_user(tid)
             if u is None:
-                u = await bot.fetch_user(tid)
+                try:
+                    u = await bot.fetch_user(tid)
+                except (discord.NotFound, discord.HTTPException):
+                    log.error("Failed to fetch user object for target id.")
             users.append(u)
         return users
 
@@ -123,7 +129,14 @@ class RemindEntry:
     async def send(self, bot: commands.Bot):
         reminders = await self.target_mentions(bot)
         decorated = reminders + "\nReminder: " + self.text
-        await reply(await self.get_context(bot), decorated)
+        ctx = bot.get_partial_messageable(self.channel_id)
+        try:
+            ctx = await self.get_context(bot)
+        except RuntimeError:
+            log.error(
+                "Missing context for reminder notice. Attempting to reply in channel."
+            )
+        await reply(ctx, decorated)
 
     def should_send(self):
         return self.time < (
@@ -159,6 +172,14 @@ def too_far_in_past(time: datetime):
     )
 
 
+def _get_button_id_add(entry_id: int):
+    return REMIND_BUTTON_ID_ADD + ":" + str(entry_id)
+
+
+def _get_button_id_remove(entry_id: int):
+    return REMIND_BUTTON_ID_REMOVE + ":" + str(entry_id)
+
+
 class Reminder(BaseCog):
 
     REMINDER_STORAGE_KEY = "remind"
@@ -173,7 +194,12 @@ class Reminder(BaseCog):
         swap_hybrid_command_description(self.remlist)
         swap_hybrid_command_description(self.remcancel)
 
+    def cog_load(self) -> None:
         self.load_stored_reminders()
+
+        for id in self.reminders.keys():
+            self.bot.add_view(ReminderView(self, id))
+
         self.reminder_loop.start()
 
     def cog_unload(self) -> None:
@@ -398,20 +424,17 @@ class Reminder(BaseCog):
             await reply(ctx, f"Cancelled reminder: {re}")
 
 
-class ReminderView(discord.ui.View):
-    def __init__(self, cog: Reminder, entry_id: int):
+class ReminderMeTooButton(discord.ui.Button):
+    def __init__(self, cog: Reminder, entry_id: int, parent: discord.ui.View):
         self.rcog = cog
         self.entry_id = entry_id
-        super().__init__(timeout=None)
+        super().__init__(
+            style=discord.ButtonStyle.blurple,
+            label=REMIND_BUTTON_TEXT_ADD,
+            custom_id=_get_button_id_add(entry_id),
+        )
 
-    @discord.ui.button(
-        label=REMIND_BUTTON_TEXT_ADD,
-        style=discord.ButtonStyle.blurple,
-        custom_id="reminder_view:me_too",
-    )
-    async def me_too_pressed(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
+    async def callback(self, interaction: discord.Interaction):
         try:
             self.rcog.add_to_reminder(entry_id=self.entry_id, user=interaction.user)
         except ValueError as err:
@@ -425,16 +448,20 @@ class ReminderView(discord.ui.View):
             + " "
             + await self.rcog.reminders[self.entry_id].target_mentions(self.rcog.bot)
         )
-        await interaction.response.edit_message(content=content, view=self)
+        await interaction.response.edit_message(content=content)
 
-    @discord.ui.button(
-        label=REMIND_BUTTON_TEXT_REMOVE,
-        style=discord.ButtonStyle.blurple,
-        custom_id="reminder_view:remove_me",
-    )
-    async def remove_me_pressed(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
+
+class ReminderRemoveMeButton(discord.ui.Button):
+    def __init__(self, cog: Reminder, entry_id: int, parent: discord.ui.View):
+        self.rcog = cog
+        self.entry_id = entry_id
+        super().__init__(
+            style=discord.ButtonStyle.blurple,
+            label=REMIND_BUTTON_TEXT_REMOVE,
+            custom_id=_get_button_id_remove(entry_id),
+        )
+
+    async def callback(self, interaction: discord.Interaction):
         try:
             self.rcog.remove_from_reminder(
                 entry_id=self.entry_id, user=interaction.user
@@ -458,4 +485,13 @@ class ReminderView(discord.ui.View):
             + " "
             + await self.rcog.reminders[self.entry_id].target_mentions(self.rcog.bot)
         )
-        await interaction.response.edit_message(content=content, view=self)
+        await interaction.response.edit_message(content=content)
+
+
+class ReminderView(discord.ui.View):
+    def __init__(self, cog: Reminder, entry_id: int):
+        self.rcog = cog
+        self.entry_id = entry_id
+        super().__init__(timeout=None)
+        self.add_item(ReminderMeTooButton(cog, entry_id, self))
+        self.add_item(ReminderRemoveMeButton(cog, entry_id, self))

@@ -113,7 +113,7 @@ class MidHelpCommand(commands.DefaultHelpCommand):
         self.end_codeblock()
 
 
-@discord.app_commands.command(name="help", description="Shows help.")
+@discord.app_commands.command(name="help", description="Shows help")
 async def help_app_command(interaction: discord.Interaction, command: Optional[str]):
     bot: MidClient = interaction.client  # type: ignore
     if bot.help_command is None:
