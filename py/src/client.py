@@ -35,16 +35,21 @@ class Storage:
                 self.fields = {}
                 for key in db.keys():
                     self.fields[key] = db[key]
+            return False
         except OSError as e:
             log.error(f"Failed to load from storage.", e, exc_info=True)
+            return True
 
     def save(self):
         try:
             with shelve.open(self.filename) as db:
                 for key in self.fields.keys():
                     db[key] = self.fields[key]
+            log.info("Saved bot data to local storage.")
+            return False
         except OSError as e:
             log.error(f"Failed to save data to storage.", e, exc_info=True)
+            return True
 
     def set(self, key: str, data):
         self.fields[key] = data
@@ -166,7 +171,6 @@ class MidClient(commands.Bot):
     @tasks.loop(seconds=STORAGE_SAVE_INTERVAL)
     async def save_storage(self):
         self.get_storage().save()
-        log.info("Saved bot data to local storage.")
 
     async def setup_hook(self) -> None:
         await super().setup_hook()

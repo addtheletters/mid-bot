@@ -9,6 +9,7 @@ from cogs.artificial_cog import Intelligence
 from cogs.cards_cog import Cards
 from cogs.deafen_cog import Deafener
 from cogs.dice_cog import DiceRoller
+from cogs.maintenance_cog import Maintenance
 from cogs.remind_cog import Reminder
 from dotenv import load_dotenv
 
@@ -27,7 +28,7 @@ if __name__ == "__main__":
     log.info("Starting bot...")
     client = MidClient(
         misc_commands=[cmds.echo, cmds.shrug, cmds.eject, bongo],
-        misc_cogs=[Intelligence, Cards, Deafener, DiceRoller, Reminder],
+        misc_cogs=[Intelligence, Cards, Deafener, DiceRoller, Maintenance, Reminder],
     )
     client.run(DISCORD_TOKEN)
     log.info("Bot stopped running.")

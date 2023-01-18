@@ -84,9 +84,6 @@ class RemindEntry:
 
     async def get_context(self, bot: commands.Bot) -> commands.Context:
         if self._context is None:
-            log.info(
-                f"channel id: {self.channel_id}, req message id: {self.request_id}"
-            )
             c = bot.get_partial_messageable(self.channel_id)
             if c is None:
                 c = await bot.fetch_channel(self.channel_id)
@@ -127,8 +124,9 @@ class RemindEntry:
         )
 
     async def send(self, bot: commands.Bot):
-        reminders = await self.target_mentions(bot)
-        decorated = reminders + "\nReminder: " + self.text
+        log.info(f"Reminder firing: {self}")
+        mentions = await self.target_mentions(bot)
+        decorated = mentions + "\nReminder: " + self.text
         ctx = bot.get_partial_messageable(self.channel_id)
         try:
             ctx = await self.get_context(bot)
@@ -420,7 +418,7 @@ class Reminder(BaseCog):
             response = re.get_response(self.bot)
             if response:
                 await response.edit(content="Reminder cancelled.", view=None)
-            await reply(ctx, f"Cancelled reminder: {re}")
+            await reply(ctx, f"Cancelled reminder: {await re.describe(self.bot)}")
 
 
 class ReminderMeTooButton(discord.ui.Button):
