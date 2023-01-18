@@ -3,6 +3,7 @@ import logging
 
 import dice
 from cmds import as_subprocess_command, swap_hybrid_command_description
+from cogs.base_cog import BaseCog
 from discord.ext import commands
 from utils import *
 
@@ -20,17 +21,40 @@ def _roll(formula: str, macro_data: dice.MacroData) -> str:
     return output
 
 
-class DiceRoller(commands.Cog):
+class DiceRoller(BaseCog):
+
+    MACRO_STORAGE_KEY = "macros"
+
     def __init__(self, bot) -> None:
-        self.macro_data: dice.MacroData = bot.get_sync_manager().MacroData()
-        self.add_default_macros()
+        super().__init__(bot)
+        self.macro_data: dice.MacroData = bot.get_sync_manager().MacroData()  # type: ignore
+
         swap_hybrid_command_description(self.roll)
         swap_hybrid_command_description(self.macros)
+
+        self.add_default_macros()
+        self.load_stored_macros()
 
     def add_default_macros(self):
         self.macro_data.add_macro("stats", "repeat(4d6kh3, 6)")
         self.macro_data.add_macro("double", "{$stats, $stats}")
         self.macro_data.add_macro("fireball", "8d6[fire damage]")
+
+    def load_stored_macros(self):
+        try:
+            loaded: dict[str, str] = self.bot.get_storage().get(
+                DiceRoller.MACRO_STORAGE_KEY
+            )
+            for n, c in loaded.items():
+                self.macro_data.add_macro(n, c)
+                log.info(f"Loaded macro {n} = {c}")
+        except KeyError as e:
+            log.error(f"No macro data found in storage.")
+
+    def update_storage(self):
+        self.bot.get_storage().set(
+            DiceRoller.MACRO_STORAGE_KEY, self.macro_data.get_all_macros()
+        )
 
     @commands.hybrid_command(
         aliases=["r"],
@@ -114,6 +138,7 @@ class DiceRoller(commands.Cog):
         old = None
         try:
             old = self.macro_data.add_macro(name=name, contents=contents)
+            self.update_storage()
         except ValueError as err:
             await reply(ctx, f"Error saving macro: `{err}`")
             return
@@ -126,6 +151,7 @@ class DiceRoller(commands.Cog):
     async def delete(self, ctx: commands.Context, name: str):
         try:
             contents = self.macro_data.delete_macro(name=name)
+            self.update_storage()
             await reply(ctx, f"Deleted macro: `{name} = {contents}`")
         except ValueError as err:
             await reply(ctx, f"Error deleting macro: `{err}`")

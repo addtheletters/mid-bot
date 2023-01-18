@@ -5,6 +5,7 @@ import artificial
 import discord
 import openai
 from cmds import swap_hybrid_command_description
+from cogs.base_cog import BaseCog
 from discord.ext import commands
 from utils import *
 
@@ -18,8 +19,9 @@ IMAGE_GEN_TITLE = "DALL-E"
 OAI_DEFAULT_IMAGE_SIZE = "512x512"
 
 
-class Intelligence(commands.Cog):
+class Intelligence(BaseCog):
     def __init__(self, bot) -> None:
+        super().__init__(bot)
         swap_hybrid_command_description(self.complete)
         swap_hybrid_command_description(self.genimage)
         swap_hybrid_command_description(self.parameters)

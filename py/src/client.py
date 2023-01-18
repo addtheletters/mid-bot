@@ -1,20 +1,16 @@
 # A bot client with some basic custom skills.
 import logging
 import os
+import shelve
 from multiprocessing.managers import SyncManager
 from typing import Optional
 
 import cmds
 import discord
-from bongo import bongo
-from cogs.artificial_cog import Intelligence
-from cogs.cards_cog import Cards, CardsData
-from cogs.deafen_cog import Deafener
-from cogs.dice_cog import DiceRoller
-from cogs.remind_cog import Reminder
+from cards import CardsData
 from config import *
 from dice import MacroData
-from discord.ext import commands
+from discord.ext import commands, tasks
 from utils import *
 
 log = logging.getLogger(__name__)
@@ -24,6 +20,42 @@ logging.basicConfig(level=logging.INFO)
 class DataManager(SyncManager):
     def __init__(self):
         SyncManager.__init__(self)
+
+
+# Interface for periodically shelving some data
+class Storage:
+    def __init__(self, filename: str) -> None:
+        self.filename = filename
+        self.fields = {}
+        self.load()
+
+    def load(self):
+        try:
+            with shelve.open(self.filename) as db:
+                self.fields = {}
+                for key in db.keys():
+                    self.fields[key] = db[key]
+            return False
+        except OSError as e:
+            log.error(f"Failed to load from storage.", e, exc_info=True)
+            return True
+
+    def save(self):
+        try:
+            with shelve.open(self.filename) as db:
+                for key in self.fields.keys():
+                    db[key] = self.fields[key]
+            log.info("Saved bot data to local storage.")
+            return False
+        except OSError as e:
+            log.error(f"Failed to save data to storage.", e, exc_info=True)
+            return True
+
+    def set(self, key: str, data):
+        self.fields[key] = data
+
+    def get(self, key: str):
+        return self.fields[key]
 
 
 class MidHelpCommand(commands.DefaultHelpCommand):
@@ -86,7 +118,7 @@ class MidHelpCommand(commands.DefaultHelpCommand):
         self.end_codeblock()
 
 
-@discord.app_commands.command(name="help", description="Shows help.")
+@discord.app_commands.command(name="help", description="Shows help")
 async def help_app_command(interaction: discord.Interaction, command: Optional[str]):
     bot: MidClient = interaction.client  # type: ignore
     if bot.help_command is None:
@@ -106,11 +138,9 @@ async def help_app_command(interaction: discord.Interaction, command: Optional[s
 
 # Bot client holding a pool of workers for running commands and a shared data manager.
 class MidClient(commands.Bot):
-    misc_commands = [cmds.echo, cmds.shrug, cmds.eject, bongo]
-    misc_cogs = [Intelligence, Cards, Deafener, DiceRoller, Reminder]
     managed_types: dict = {"CardsData": CardsData, "MacroData": MacroData}
 
-    def __init__(self):
+    def __init__(self, misc_commands, misc_cogs):
         commands.Bot.__init__(
             self,
             command_prefix=commands.when_mentioned_or(get_summon_prefix()),
@@ -118,9 +148,14 @@ class MidClient(commands.Bot):
             intents=get_intents(),
             help_command=MidHelpCommand(),
         )
+        self.description = config.BOT_DESCRIPTION
+
+        self.misc_commands = misc_commands
+        self.misc_cogs = misc_cogs
+
         self.executor = cmds.PebbleExecutor(MAX_COMMAND_WORKERS, COMMAND_TIMEOUT)
         self.sync_manager = None
-        self.description = config.BOT_DESCRIPTION
+        self.storage = Storage(LOCAL_STORAGE_FILENAME)
 
     def get_sync_manager(self) -> DataManager:
         if self.sync_manager is None:
@@ -129,6 +164,13 @@ class MidClient(commands.Bot):
 
     def get_executor(self) -> cmds.PebbleExecutor:
         return self.executor
+
+    def get_storage(self) -> Storage:
+        return self.storage
+
+    @tasks.loop(seconds=STORAGE_SAVE_INTERVAL)
+    async def save_storage(self):
+        self.get_storage().save()
 
     async def setup_hook(self) -> None:
         await super().setup_hook()
@@ -163,9 +205,7 @@ class MidClient(commands.Bot):
         await self.login(token)
         await self.connect(reconnect=reconnect)
 
-        self.executor.shutdown(False)
-        if self.sync_manager != None:
-            self.sync_manager.shutdown()
+        self.shutdown_manager()
 
     def setup_manager(self):
         if self.sync_manager != None:
@@ -177,6 +217,15 @@ class MidClient(commands.Bot):
         self.sync_manager = DataManager()
         self.sync_manager.start()
         log.info("Sync manager started.")
+        self.save_storage.start()  # also start periodic save-to-disk task
+
+    def shutdown_manager(self):
+        self.executor.shutdown(False)
+        if self.sync_manager != None:
+            self.sync_manager.shutdown()
+        log.info("Sync manager shut down.")
+        self.save_storage.cancel()  # stop periodic save-to-disk task
+        self.get_storage().save()
 
     async def on_ready(self):
         log.info(
@@ -192,8 +241,8 @@ class MidClient(commands.Bot):
     async def register_commands(self):
         self.tree.add_command(help_app_command)
 
-        for cmd in MidClient.misc_commands:
+        for cmd in self.misc_commands:
             cmds.swap_hybrid_command_description(cmd)
             self.add_command(cmd)
-        for cog in MidClient.misc_cogs:
+        for cog in self.misc_cogs:
             await self.add_cog(cog(self))

@@ -53,13 +53,13 @@ async def send_safe(
 # Send `text` as a reply in the given context `ctx`.
 # Set `mention` to true to include an @ mention. Behavior if unset is to mention if not a slash command.
 async def reply(
-    ctx: commands.Context,
+    ctx: commands.Context | discord.abc.Messageable,
     text: str | None = None,
     mention: typing.Optional[bool] = None,
     **kwargs,
 ):
     payload = text
-    if text:
+    if text and isinstance(ctx, commands.Context):
         payload = f"{(ctx.author.mention + ' ') if mention else ''}{text}"
     return await send_safe(ctx=ctx, text=payload, **kwargs)
 

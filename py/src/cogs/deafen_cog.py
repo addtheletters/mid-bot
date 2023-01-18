@@ -3,6 +3,7 @@ import logging
 from datetime import datetime, timedelta
 
 from cmds import swap_hybrid_command_description
+from cogs.base_cog import BaseCog
 from discord.ext import commands
 from utils import *
 
@@ -13,8 +14,9 @@ MAX_DEAFEN_SECONDS = 300
 UNDEAFEN_CMD_NAME = "undeafen"
 
 
-class Deafener(commands.Cog):
+class Deafener(BaseCog):
     def __init__(self, bot) -> None:
+        super().__init__(bot)
         self.time_for_undeafen: datetime | None = None
         swap_hybrid_command_description(self.deafen)
         swap_hybrid_command_description(self.undeafen)
