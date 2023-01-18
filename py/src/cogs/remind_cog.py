@@ -34,21 +34,21 @@ class RemindEntry:
         targets: list[discord.User | discord.Member],
         reply: discord.Message | None = None,
     ) -> None:
-        self.text = text
-        self.time = time
-        self.target_ids = [t.id for t in targets]
-        self.author_id = context.author.id
-        self.channel_id = context.channel.id
-        self.request_id = context.message.id
+        self.text: str = text
+        self.time: datetime = time
+        self.target_ids: list[int] = [t.id for t in targets]
+        self.author_id: int = context.author.id
+        self.channel_id: int = context.channel.id
+        self.request_id: int = context.message.id
         if context.interaction:
-            self.interaction = True
+            self.interaction: bool = True
         else:
-            self.interaction = False
-        self.response_id = reply.id if reply else None
+            self.interaction: bool = False
+        self.response_id: int | None = reply.id if reply else None
 
-        # cache-like, these won't change once fetched
-        self._request = context.message
-        self._context = context
+        # cache-like discord models; these won't change once fetched but aren't persisted in storage.
+        self._request: discord.Message | discord.PartialMessage | None = context.message
+        self._context: commands.Context | None = context
 
     def __repr__(self) -> str:
         return f"Reminder at {short_format_time(self.time)} for {','.join(str(tid) for tid in self.target_ids)}: {self.text}"
@@ -290,7 +290,6 @@ class Reminder(BaseCog):
     The bot will mention you in a message within a minute of the set time, in the same channel the command was used.
     It will attempt to parse your requested time, allowing for requests like `{get_summon_prefix()}remind "in 30 minutes" check the oven`.
     If AM/PM is unspecified, it defaults to 24-hour clock interpretation, but will try to auto-adjust if the resulting time is in the past.
-    Reminders aren't yet saved to any persistent storage, and will be lost if the bot restarts, so don't rely on it for anything extremely important.
     """,
     )
     async def remind(self, ctx: commands.Context, time: str, *, text: str):
@@ -390,7 +389,7 @@ class Reminder(BaseCog):
         description=f"""
     __**remcancel**__
     Cancel a reminder.
-    If you have only a single reminder set, will cancel that one when ID is omitted. 
+    If you have only a single reminder set, this will cancel it when ID is omitted.
     """,
     )
     async def remcancel(self, ctx: commands.Context, id: typing.Optional[int] = None):
