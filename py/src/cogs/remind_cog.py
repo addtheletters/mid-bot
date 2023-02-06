@@ -198,7 +198,7 @@ class Reminder(BaseCog):
         for id in self.reminders.keys():
             self.bot.add_view(ReminderView(self, id))
 
-        self.reminder_loop.start()
+        self.check_start_loop()
 
     def cog_unload(self) -> None:
         self.reminder_loop.cancel()
@@ -208,7 +208,11 @@ class Reminder(BaseCog):
         done = []
         for id, entry in self.reminders.items():
             if entry.should_send():
-                await entry.send(self.bot)
+                try:
+                    await entry.send(self.bot)
+                except discord.errors.HTTPException as e:
+                    log.error(f"Error sending reminder. Will retry.", e)
+                    continue
                 response = entry.get_response(self.bot)
                 if response:
                     await response.edit(
@@ -217,6 +221,12 @@ class Reminder(BaseCog):
                 done.append(id)
         for id in done:
             self.cancel(id)
+
+    # If the reminder loop isn't running (at initialization or due to errors), start it.
+    def check_start_loop(self):
+        if not self.reminder_loop.is_running():
+            log.warning("Reminder loop isn't running! Starting...")
+            self.reminder_loop.start()
 
     @reminder_loop.before_loop
     async def bot_wait_reminder_loop(self):
@@ -355,6 +365,8 @@ class Reminder(BaseCog):
         )
         if response:
             entry.response_id = response.id
+
+        self.check_start_loop()
 
     @remind.error
     async def remind_error(self, ctx: commands.Context, error):
